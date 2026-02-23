@@ -372,3 +372,442 @@ This module establishes:
 * Terraform modular architecture
 
 It is the foundation upon which all other platform services will be deployed.
+
+---
+
+#  Data Lake Module — Enterprise Medallion Storage (Terraform)
+
+---
+
+# 1️ Purpose of This Module
+
+The **Data Lake module** provisions the storage foundation of the Enterprise Data Platform.
+
+It creates a secure, environment-isolated, production-grade medallion architecture using:
+
+- Amazon S3 (object storage)
+- Encryption at rest
+- Versioning
+- Public access blocking
+- Deterministic naming
+- Terraform-managed lifecycle
+
+This module is designed following strict enterprise principles:
+
+- Structure before services
+- Environment isolation
+- No public exposure
+- No manual console creation
+- Fully reproducible via Terraform
+
+---
+
+# 2️ What Problem This Module Solves
+
+After networking is provisioned, we need durable storage for:
+
+- Raw Change Data Capture (CDC)
+- Cleaned transformation outputs
+- Aggregated analytical datasets
+- Invalid data isolation
+- Controlled SQL query results
+
+Without this module:
+
+- Glue cannot write data
+- Athena cannot query structured datasets
+- Redshift cannot COPY from curated storage
+- There is no system of record
+
+This module establishes the storage layer of the platform.
+
+---
+
+# 3️ Architecture Overview
+
+We implement a strict **Medallion Architecture**:
+
+| Layer | Purpose |
+|-------|----------|
+| Bronze | Immutable raw CDC events |
+| Silver | Cleaned & structured datasets |
+| Gold | Business aggregates |
+| Quarantine | Invalid or failed records |
+| Athena Results | Controlled SQL output location |
+
+Each layer is provisioned as an independent S3 bucket for:
+
+- IAM isolation
+- Blast-radius containment
+- Lifecycle control
+- Clear governance boundaries
+
+---
+
+# 4️ Module Structure
+
+```
+
+modules/
+  data-lake/
+    main.tf
+    variables.tf
+    outputs.tf
+
+```
+
+Environment composition:
+
+```
+
+environments/
+  dev/
+    main.tf
+  staging/
+    main.tf
+  prod/
+    main.tf
+
+```
+
+---
+
+# 5 variables.tf
+
+```
+
+######################################################
+# Environment Name
+######################################################
+
+variable "environment" {
+  description = "Deployment environment (dev, staging, prod)"
+  type        = string
+}
+
+######################################################
+# Allow Force Destroy (Dev Only)
+######################################################
+
+variable "force_destroy" {
+  description = "Allow bucket deletion even if non-empty (true only in dev)"
+  type        = bool
+  default     = false
+}
+
+```
+
+## Explanation
+
+environment  
+Ensures naming isolation between dev, staging, and prod.
+
+force_destroy  
+Prevents destructive deletion in staging and production.  
+Should be set to true only in development.
+
+---
+
+# 6 main.tf (Complete Logic)
+
+```
+
+######################################################
+# DATA LAKE MODULE — ENTERPRISE MEDALLION STORAGE
+######################################################
+
+######################################################
+# Current AWS Account Identity
+######################################################
+
+data "aws_caller_identity" "current" {}
+
+######################################################
+# Local Naming Convention
+######################################################
+
+locals {
+  bronze_bucket         = "edp-emeka-${var.environment}-bronze"
+  silver_bucket         = "edp-emeka-${var.environment}-silver"
+  gold_bucket           = "edp-emeka-${var.environment}-gold"
+  quarantine_bucket     = "edp-emeka-${var.environment}-quarantine"
+  athena_results_bucket = "edp-emeka-${var.environment}-athena-results"
+
+  common_tags = {
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+    Owner       = "Emeka"
+    Project     = "EnterpriseDataPlatform"
+    AccountID   = data.aws_caller_identity.current.account_id
+  }
+}
+
+######################################################
+# Bronze Bucket — Raw CDC
+######################################################
+
+resource "aws_s3_bucket" "bronze" {
+  bucket        = local.bronze_bucket
+  force_destroy = var.force_destroy
+
+  tags = merge(local.common_tags, {
+    Name  = local.bronze_bucket
+    Layer = "Bronze"
+  })
+}
+
+######################################################
+# Silver Bucket — Cleaned Data
+######################################################
+
+resource "aws_s3_bucket" "silver" {
+  bucket        = local.silver_bucket
+  force_destroy = var.force_destroy
+
+  tags = merge(local.common_tags, {
+    Name  = local.silver_bucket
+    Layer = "Silver"
+  })
+}
+
+######################################################
+# Gold Bucket — Business Aggregates
+######################################################
+
+resource "aws_s3_bucket" "gold" {
+  bucket        = local.gold_bucket
+  force_destroy = var.force_destroy
+
+  tags = merge(local.common_tags, {
+    Name  = local.gold_bucket
+    Layer = "Gold"
+  })
+}
+
+######################################################
+# Quarantine Bucket — Invalid Records
+######################################################
+
+resource "aws_s3_bucket" "quarantine" {
+  bucket        = local.quarantine_bucket
+  force_destroy = var.force_destroy
+
+  tags = merge(local.common_tags, {
+    Name  = local.quarantine_bucket
+    Layer = "Quarantine"
+  })
+}
+
+######################################################
+# Athena Results Bucket
+######################################################
+
+resource "aws_s3_bucket" "athena_results" {
+  bucket        = local.athena_results_bucket
+  force_destroy = var.force_destroy
+
+  tags = merge(local.common_tags, {
+    Name  = local.athena_results_bucket
+    Layer = "QueryResults"
+  })
+}
+
+######################################################
+# Encryption Configuration (All Buckets)
+######################################################
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "all" {
+  for_each = {
+    bronze         = aws_s3_bucket.bronze.id
+    silver         = aws_s3_bucket.silver.id
+    gold           = aws_s3_bucket.gold.id
+    quarantine     = aws_s3_bucket.quarantine.id
+    athena_results = aws_s3_bucket.athena_results.id
+  }
+
+  bucket = each.value
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+######################################################
+# Versioning (All Buckets)
+######################################################
+
+resource "aws_s3_bucket_versioning" "all" {
+  for_each = {
+    bronze         = aws_s3_bucket.bronze.id
+    silver         = aws_s3_bucket.silver.id
+    gold           = aws_s3_bucket.gold.id
+    quarantine     = aws_s3_bucket.quarantine.id
+    athena_results = aws_s3_bucket.athena_results.id
+  }
+
+  bucket = each.value
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+######################################################
+# Public Access Block (All Buckets)
+######################################################
+
+resource "aws_s3_bucket_public_access_block" "all" {
+  for_each = {
+    bronze         = aws_s3_bucket.bronze.id
+    silver         = aws_s3_bucket.silver.id
+    gold           = aws_s3_bucket.gold.id
+    quarantine     = aws_s3_bucket.quarantine.id
+    athena_results = aws_s3_bucket.athena_results.id
+  }
+
+  bucket = each.value
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+```
+
+---
+
+# 7 outputs.tf
+
+```
+
+output "bronze_bucket_name" {
+  value = aws_s3_bucket.bronze.bucket
+}
+
+output "silver_bucket_name" {
+  value = aws_s3_bucket.silver.bucket
+}
+
+output "gold_bucket_name" {
+  value = aws_s3_bucket.gold.bucket
+}
+
+output "quarantine_bucket_name" {
+  value = aws_s3_bucket.quarantine.bucket
+}
+
+output "athena_results_bucket" {
+  value = aws_s3_bucket.athena_results.bucket
+}
+
+```
+
+## Why Outputs Matter
+
+These outputs allow downstream modules to:
+
+- Reference bucket names
+- Attach IAM policies
+- Configure Glue jobs
+- Configure Athena workgroups
+- Configure Redshift COPY commands
+
+No bucket name should ever be hardcoded outside this module.
+
+---
+
+# 8 Environment Composition Example (dev)
+
+```
+
+module "data_lake" {
+  source        = "../../modules/data-lake"
+  environment   = "dev"
+  force_destroy = true
+}
+
+```
+
+Staging and production:
+
+```
+
+module "data_lake" {
+  source        = "../../modules/data-lake"
+  environment   = "staging"
+  force_destroy = false
+}
+
+```
+
+---
+
+# 9 Security Controls Implemented
+
+This module enforces:
+
+- Encryption at rest (AES256)
+- Versioning enabled
+- Public access completely blocked
+- No public ACLs
+- No public policies
+- Terraform-only provisioning
+- Environment isolation
+
+These are considered **minimum enterprise storage controls**.
+
+---
+
+#  What We Achieved
+
+After applying this module, we now have:
+
+- Fully provisioned medallion storage
+- Secure, private S3 buckets
+- Deterministic naming
+- Governance-ready architecture
+- Downstream integration capability
+
+At this stage, the platform includes:
+
+- Networking (VPC + private subnets)
+- Secure Data Lake (Medallion S3 buckets)
+
+The next logical layer is:
+
+Metadata (Glue Data Catalog + Athena Workgroup)
+
+This will allow structured querying of the Silver and Gold layers.
+
+---
+
+# 10 Deployment Commands
+
+```
+
+aws sso login --profile dev-admin
+cd environments/dev
+terraform init
+terraform plan
+terraform apply
+
+```
+
+---
+
+# 11 Manual Validation Checklist
+
+After apply, verify in AWS Console:
+
+- 5 buckets exist
+- Encryption enabled
+- Versioning enabled
+- Public access fully blocked
+- Proper naming pattern
+- Correct tags applied
+- No public policies attached
+
+If all checks pass, the storage layer is production-ready.

@@ -4,7 +4,7 @@
 
 module "networking" {
   source      = "../../modules/networking"
-  environment = "dev"
+  environment = "staging"
   vpc_cidr    = "10.10.0.0/16"
   region      = "eu-central-1"
 }
@@ -15,6 +15,6 @@ module "networking" {
 
 module "data_lake" {
   source        = "../../modules/data-lake"
-  environment   = "dev"
+  environment   = "staging"
   force_destroy = true
 }
