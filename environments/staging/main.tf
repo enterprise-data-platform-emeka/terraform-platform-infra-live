@@ -1,20 +1,12 @@
-######################################################
-# Networking Module Composition
-######################################################
-
 module "networking" {
   source      = "../../modules/networking"
-  environment = "staging"
-  vpc_cidr    = "10.10.0.0/16"
-  region      = "eu-central-1"
+  environment = var.environment
+  vpc_cidr    = var.vpc_cidr
 }
-
-######################################################
-# Data Lake Module Composition
-######################################################
 
 module "data_lake" {
   source        = "../../modules/data-lake"
-  environment   = "staging"
-  force_destroy = true
+  environment   = var.environment
+  force_destroy = false
+  name_prefix   = var.name_prefix
 }
