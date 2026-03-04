@@ -35,3 +35,17 @@ variable "deletion_protection" {
   type        = bool
   default     = true
 }
+
+# ── Serving ──────────────────────────────────────────────────────────────────
+
+variable "redshift_admin_password" {
+  description = "Admin password for Redshift Serverless namespace. Provide via TF_VAR_redshift_admin_password env var or secret.tfvars"
+  type        = string
+  sensitive   = true
+}
+
+variable "redshift_base_capacity_rpus" {
+  description = "Base compute capacity for Redshift Serverless in RPUs (Redshift Processing Units). Minimum is 8."
+  type        = number
+  default     = 16
+}

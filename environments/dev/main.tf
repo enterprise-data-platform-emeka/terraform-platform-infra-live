@@ -36,3 +36,36 @@ module "ingestion" {
   multi_az            = var.multi_az
   deletion_protection = var.deletion_protection
 }
+
+module "processing" {
+  source                = "../../modules/processing"
+  environment           = var.environment
+  name_prefix           = var.name_prefix
+  vpc_id                = module.networking.vpc_id
+  private_subnet_ids    = module.networking.private_subnet_ids
+  kms_key_arn           = module.iam_metadata.kms_key_arn
+  athena_results_bucket = module.data_lake.athena_results_bucket
+}
+
+module "serving" {
+  source                  = "../../modules/serving"
+  environment             = var.environment
+  name_prefix             = var.name_prefix
+  vpc_id                  = module.networking.vpc_id
+  vpc_cidr                = var.vpc_cidr
+  private_subnet_ids      = module.networking.private_subnet_ids
+  kms_key_arn             = module.iam_metadata.kms_key_arn
+  redshift_role_arn       = module.iam_metadata.redshift_role_arn
+  redshift_admin_password = var.redshift_admin_password
+}
+
+module "orchestration" {
+  source             = "../../modules/orchestration"
+  environment        = var.environment
+  name_prefix        = var.name_prefix
+  vpc_id             = module.networking.vpc_id
+  private_subnet_ids = module.networking.private_subnet_ids
+  kms_key_arn        = module.iam_metadata.kms_key_arn
+  mwaa_role_arn      = module.iam_metadata.mwaa_role_arn
+  force_destroy      = true
+}

@@ -35,3 +35,11 @@ variable "deletion_protection" {
   type        = bool
   default     = false
 }
+
+# ── Serving ──────────────────────────────────────────────────────────────────
+
+variable "redshift_admin_password" {
+  description = "Admin password for Redshift Serverless namespace. Provide via TF_VAR_redshift_admin_password env var or secret.tfvars"
+  type        = string
+  sensitive   = true
+}
