@@ -2,42 +2,40 @@
 
 **Location:** `terraform-platform-infra-live/modules/networking/`
 
-**Part of:** Terraform Platform Infra — Foundation Layer
-
 ---
 
-## What This Module Does
+## What this module does
 
 This module creates the private network that all other platform services live inside.
 
-Think of it like building the roads, walls, and plumbing of a building before any furniture (databases, compute, storage) goes in. Nothing else in this platform can be deployed securely without networking existing first.
+Think of it like the roads, walls, and plumbing of a building before any furniture goes in. Nothing else in this platform can be deployed without networking existing first, because every AWS service needs a network to run in.
 
 Specifically, this module creates:
 
-1. A **VPC** (Virtual Private Cloud) — a private, isolated network in AWS
-2. An **Internet Gateway** — the door to the public internet (for the public subnet only)
-3. One **public subnet** — for future load balancers or bastion hosts
-4. Two **private subnets** across two Availability Zones — where all compute services run
-5. **Route tables** — the traffic rules defining where data packets go
-6. An **S3 Gateway VPC Endpoint** — allows private subnets to reach S3 without internet
+1. A **VPC (Virtual Private Cloud)** - a private, isolated network in AWS that is completely separate from the internet and from other AWS accounts
+2. An **Internet Gateway (IGW)** - the door between the public subnet and the internet
+3. One **public subnet** - a network segment inside the VPC that has a route to the internet, reserved for future use like a bastion host (a jump server used to access private resources)
+4. Two **private subnets** across two AZs (Availability Zones, which are independent data centers within the same AWS region) - where all compute services actually run
+5. **Route tables** - the traffic rules that define where network packets go
+6. An **S3 (Simple Storage Service) Gateway VPC Endpoint** - a direct connection that lets private subnets reach S3 without going through the internet
 
 ---
 
-## Why This Exists — The Problem It Solves
+## Why this exists
 
 AWS services need a network boundary to operate in. Without a VPC:
 - Services have no isolation from each other or the internet
 - There is no way to control inbound or outbound traffic
 - Services cannot communicate privately with each other
-- There is no private access to S3 (you would need an expensive NAT Gateway or expose traffic to the internet)
+- There is no private access to S3, which would require an expensive NAT (Network Address Translation) Gateway instead
 
 This module provides all of that in one reusable block.
 
 ---
 
-## Resources Created
+## Resources created
 
-### 1. `aws_vpc` — The Private Network
+### 1. `aws_vpc` - The private network
 
 ```hcl
 resource "aws_vpc" "this" {
@@ -47,15 +45,15 @@ resource "aws_vpc" "this" {
 }
 ```
 
-**What it is:** A VPC is like a private data center network inside AWS. Only resources you explicitly place inside it can communicate with each other.
+A VPC is like a private data center network inside AWS. Only resources I explicitly place inside it can communicate with each other.
 
-**`cidr_block`:** Defines the IP address range for the entire network. For dev this is `10.10.0.0/16`, which provides 65,536 available IP addresses.
+`cidr_block` defines the IP address range for the entire network. For dev this is `10.10.0.0/16`, which gives 65,536 available IP addresses. CIDR (Classless Inter-Domain Routing) is the notation used to define these ranges.
 
-**`enable_dns_hostnames = true`:** Managed services like Glue and Redshift need to resolve each other's hostnames (e.g., `my-rds-instance.abc.eu-central-1.rds.amazonaws.com`). This setting enables that.
+`enable_dns_hostnames = true` is required because managed services like Glue and Redshift need to resolve each other's DNS (Domain Name System) hostnames, for example `my-rds-instance.abc.eu-central-1.rds.amazonaws.com`. Without this, internal name resolution does not work.
 
 ---
 
-### 2. `aws_internet_gateway` — The Internet Door
+### 2. `aws_internet_gateway` - The internet door
 
 ```hcl
 resource "aws_internet_gateway" "this" {
@@ -63,13 +61,13 @@ resource "aws_internet_gateway" "this" {
 }
 ```
 
-**What it is:** The gateway that allows outbound traffic from the public subnet to reach the internet, and inbound traffic from the internet to reach the public subnet.
+The Internet Gateway (IGW) allows outbound traffic from the public subnet to reach the internet, and allows inbound traffic from the internet to reach the public subnet.
 
-**Important:** The private subnets are NOT connected to this gateway. They have no route to the internet by design. This keeps compute services isolated.
+The private subnets are not connected to this gateway. They have no route to the internet by design. This keeps all compute services isolated from direct internet access.
 
 ---
 
-### 3. `aws_subnet.public` — The Public Subnet
+### 3. `aws_subnet.public` - The public subnet
 
 ```hcl
 resource "aws_subnet" "public" {
@@ -80,15 +78,15 @@ resource "aws_subnet" "public" {
 }
 ```
 
-**What it is:** A subdivision of the VPC network that has a route to the internet.
+A subnet is a smaller network segment carved out of the VPC's CIDR range.
 
-**`cidrsubnet(var.vpc_cidr, 4, 0)`:** This function automatically calculates the subnet IP range from the VPC's CIDR. For `10.10.0.0/16` with a `/4` prefix extension, this gives `10.10.0.0/20`.
+`cidrsubnet(var.vpc_cidr, 4, 0)` automatically calculates the subnet IP range from the VPC's CIDR. For `10.10.0.0/16` with a `/4` prefix extension, this gives `10.10.0.0/20`.
 
-**When this is used:** Currently reserved for future use (bastion host, load balancer). No data processing happens here. All compute is in the private subnets.
+This subnet is reserved for future use (a bastion host or load balancer). No data processing happens here. All compute lives in the private subnets.
 
 ---
 
-### 4. `aws_subnet.private_a` and `aws_subnet.private_b` — The Compute Subnets
+### 4. `aws_subnet.private_a` and `aws_subnet.private_b` - The compute subnets
 
 ```hcl
 resource "aws_subnet" "private_a" {
@@ -104,23 +102,15 @@ resource "aws_subnet" "private_b" {
 }
 ```
 
-**What they are:** These are the two subnets where all actual compute services run:
-- AWS Glue jobs
-- Amazon Redshift Serverless
-- Amazon MWAA (Airflow)
-- AWS DMS replication instances
-- Amazon RDS
+These are the two subnets where all actual compute services run: AWS Glue jobs, Amazon Redshift Serverless, Amazon MWAA (Managed Workflows for Apache Airflow), AWS DMS (Database Migration Service) replication instances, and Amazon RDS (Relational Database Service).
 
-**Why two subnets?** AWS requires services like MWAA and Redshift Serverless to span at least two Availability Zones (AZs). An AZ is an independent data center within the same AWS region. If one AZ has an outage, the service continues running in the other AZ. This is called **high availability**.
+I create two subnets across two AZs (Availability Zones) because AWS requires services like MWAA and Redshift Serverless to span at least two AZs. An AZ is an independent data center within the same AWS region. If one AZ has an outage, the service continues running in the other AZ. This is called high availability.
 
-**Why no internet route?** These subnets have no route to the internet. This means:
-- Hackers cannot reach these services directly from the internet
-- Services cannot accidentally send data out to the internet
-- The only way to reach S3 is through the VPC Endpoint (see below)
+These subnets have no route to the internet. This means external traffic cannot reach these services directly, and services cannot accidentally send data out to the internet. The only way to reach S3 is through the VPC Endpoint described below.
 
 ---
 
-### 5. `aws_route_table.public` and `aws_route_table.private` — Traffic Rules
+### 5. Route tables - Traffic rules
 
 ```hcl
 resource "aws_route_table" "public" {
@@ -134,21 +124,21 @@ resource "aws_route_table" "public" {
 
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.this.id
-  # No routes — traffic stays inside the VPC only
+  # No routes - traffic stays inside the VPC only
 }
 ```
 
-**What they are:** Route tables are like GPS rules for network traffic. When a packet arrives, AWS looks up the route table to decide where to send it.
+Route tables are like GPS rules for network traffic. When a packet arrives, AWS looks up the route table to decide where to send it.
 
-**Public route table:** Has one rule — send all traffic (`0.0.0.0/0`) to the Internet Gateway.
+The public route table has one rule: send all traffic (`0.0.0.0/0` means "everything") to the Internet Gateway.
 
-**Private route table:** Has no external routes. Traffic from private subnets can only reach other resources inside the VPC (or S3 via the endpoint below).
+The private route table has no external routes. Traffic from private subnets can only reach other resources inside the VPC, or S3 via the endpoint below.
 
-**`aws_route_table_association`:** Links the route table to the specific subnet. A subnet without an association uses the VPC's default route table.
+`aws_route_table_association` links each route table to its subnet. A subnet without an explicit association falls back to the VPC's default route table.
 
 ---
 
-### 6. `aws_vpc_endpoint.s3` — The S3 Express Lane
+### 6. `aws_vpc_endpoint.s3` - The S3 express lane
 
 ```hcl
 resource "aws_vpc_endpoint" "s3" {
@@ -159,153 +149,142 @@ resource "aws_vpc_endpoint" "s3" {
 }
 ```
 
-**What it is:** An S3 Gateway Endpoint is a special connection that allows private subnets to reach Amazon S3 without going through the internet.
+An S3 Gateway VPC Endpoint is a direct connection that allows private subnets to reach Amazon S3 without going through the internet.
 
-**Why this matters:** Glue jobs read and write massive amounts of data to S3. Without this endpoint, that traffic would need a NAT Gateway (a device that routes private traffic through a public IP) which costs approximately $32/month per AZ plus data processing fees. The S3 Gateway Endpoint is free.
+This matters because Glue jobs read and write large amounts of data to S3. Without this endpoint, that traffic would need a NAT (Network Address Translation) Gateway, which costs approximately $32 per month per AZ plus data processing fees. The S3 Gateway Endpoint is free.
 
-**How it works:** When a Glue job inside the private subnet sends a request to `s3.amazonaws.com`, AWS intercepts that traffic and routes it through the VPC endpoint directly to S3 — never touching the public internet.
-
----
-
-## Module Inputs (Variables)
-
-| Variable | Type | Description |
-|---|---|---|
-| `environment` | string | The environment name: `dev`, `staging`, or `prod` |
-| `vpc_cidr` | string | The IP address range for the VPC (e.g., `10.10.0.0/16`) |
-
-These are defined in `variables.tf`.
+When a Glue job inside the private subnet sends a request to `s3.amazonaws.com`, AWS intercepts it and routes it through the VPC endpoint directly to S3, never touching the public internet.
 
 ---
 
-## Module Outputs
+## Why no NAT Gateway?
 
-| Output | Value | Used By |
-|---|---|---|
-| `vpc_id` | The VPC's unique AWS ID | `ingestion`, `processing`, `serving`, `orchestration` modules |
-| `private_subnet_ids` | List of both private subnet IDs | All compute modules (Glue, MWAA, Redshift, DMS) |
-| `public_subnet_id` | The public subnet's ID | Available for future use |
+NAT (Network Address Translation) allows private subnets to access the public internet. I intentionally do not include a NAT Gateway in this module because:
 
-These are defined in `outputs.tf`. Other modules receive these values as inputs so they can deploy their resources into the same network.
+- The only external service my compute jobs need to reach is S3
+- The S3 Gateway VPC Endpoint covers that requirement for free
+- Adding a NAT Gateway would cost roughly $32 per month with no benefit
+
+If the AI Operations Agent (which runs as an ECS Fargate task and needs to reach the Anthropic Claude API) requires internet access, I add a NAT Gateway in the orchestration module or configure the ECS task to use a public subnet.
 
 ---
 
-## CIDR Subnetting — How the IP Ranges Are Calculated
+## How subnets are calculated
 
 The `cidrsubnet()` function divides the VPC CIDR into smaller subnets automatically.
 
 For `10.10.0.0/16` with a `newbits` of `4`:
 
-| Index | Subnet CIDR | Assigned To |
+| Index | Subnet CIDR | Assigned to |
 |---|---|---|
 | 0 | `10.10.0.0/20` | Public Subnet |
 | 1 | `10.10.16.0/20` | Private Subnet A |
 | 2 | `10.10.32.0/20` | Private Subnet B |
 
-Each `/20` subnet contains 4,096 IP addresses. There is room for additional subnets in the future.
+Each `/20` subnet contains 4,096 IP addresses. The remaining space in the VPC (`10.10.48.0` onwards) is available for future subnets.
 
 ---
 
-## IP Ranges Across Environments
+## IP ranges across environments
 
-| Environment | VPC CIDR | Why Different |
+| Environment | VPC CIDR | Why different |
 |---|---|---|
-| dev | `10.10.0.0/16` | Non-overlapping range for future peering |
-| staging | `10.20.0.0/16` | Non-overlapping range for future peering |
-| prod | `10.30.0.0/16` | Non-overlapping range for future peering |
+| dev | `10.10.0.0/16` | Non-overlapping for future VPC peering |
+| staging | `10.20.0.0/16` | Non-overlapping for future VPC peering |
+| prod | `10.30.0.0/16` | Non-overlapping for future VPC peering |
 
-Using non-overlapping ranges is a best practice. If you ever need to connect two accounts via VPC Peering (e.g., so prod can query dev metadata), overlapping CIDRs would make that impossible.
+Using non-overlapping CIDR ranges is a best practice. If I ever need to connect two accounts via VPC Peering (so one account can access resources in another), overlapping CIDRs make that impossible.
 
 ---
 
-## How to Deploy This Module
+## Module inputs (variables)
+
+| Variable | Type | Description |
+|---|---|---|
+| `environment` | string | The environment name: `dev`, `staging`, or `prod` |
+| `vpc_cidr` | string | The IP address range for the VPC, for example `10.10.0.0/16` |
+
+---
+
+## Module outputs
+
+| Output | Value | Used by |
+|---|---|---|
+| `vpc_id` | The VPC's unique AWS ID | `ingestion`, `processing`, `serving`, `orchestration` modules |
+| `private_subnet_ids` | List of both private subnet IDs | All compute modules (Glue, MWAA, Redshift, DMS) |
+| `public_subnet_id` | The public subnet's ID | Available for future use |
+
+Other modules receive these values as inputs so they can deploy their resources into the same network.
+
+---
+
+## How to deploy
 
 This module is not deployed directly. It is called from an environment folder.
 
-### Step 1 — Login to AWS
-
 ```bash
+# Log in to AWS
 aws sso login --profile dev-admin
-```
 
-### Step 2 — Navigate to an environment
-
-```bash
+# Navigate to the environment
 cd terraform-platform-infra-live/environments/dev
-```
 
-### Step 3 — Initialize Terraform
-
-```bash
+# Initialize Terraform (run once, or after adding new modules)
 terraform init
-```
 
-This downloads the AWS provider and registers all modules. You only need to run this once (or after adding new modules).
-
-### Step 4 — Preview what will be created
-
-```bash
+# Preview what will be created
 terraform plan
-```
 
-Terraform will show you a list of every resource it plans to create. Read this carefully before applying.
-
-### Step 5 — Create the infrastructure
-
-```bash
+# Create the infrastructure
 terraform apply
 ```
 
-Type `yes` when prompted. Terraform creates all resources in AWS.
-
-### Using the Makefile (shortcut)
-
-From inside `terraform-platform-infra-live/`:
+Or using the Makefile shortcut from inside `terraform-platform-infra-live/`:
 
 ```bash
-make init dev    # Same as: cd environments/dev && terraform init
-make plan dev    # Same as: cd environments/dev && terraform plan
-make apply dev   # Same as: cd environments/dev && terraform apply
+make init dev
+make plan dev
+make apply dev
 ```
 
 ---
 
-## Validation — How to Confirm It Worked
+## Validation checklist
 
-After `terraform apply` completes, verify in the AWS Console:
+After `terraform apply` completes, I check the following in the AWS console:
 
-1. **VPC Console** → VPCs → Find your VPC (filter by name `edp-dev`)
-   - Check CIDR is `10.10.0.0/16`
-   - DNS hostnames: Enabled
-   - DNS resolution: Enabled
+**VPC Console:**
+- VPC exists with the correct CIDR
+- DNS hostnames: Enabled
+- DNS resolution: Enabled
 
-2. **VPC Console** → Subnets → Filter by VPC
-   - 3 subnets should exist (1 public, 2 private)
-   - Private subnets should be in different AZs
+**Subnets:**
+- Three subnets exist: one public, two private
+- Private subnets are in different AZs
 
-3. **VPC Console** → Route Tables
-   - Public route table: Has a `0.0.0.0/0` route to the Internet Gateway
-   - Private route table: Has NO `0.0.0.0/0` route
+**Route Tables:**
+- Public route table has a `0.0.0.0/0` route to the Internet Gateway
+- Private route table has no `0.0.0.0/0` route
 
-4. **VPC Console** → Endpoints
-   - One S3 Gateway endpoint associated with the private route table
+**Endpoints:**
+- One S3 Gateway Endpoint is associated with the private route table
 
 ---
 
-## What Comes Next
+## What comes next
 
-After networking is deployed, the next module to apply is **data-lake** (S3 medallion buckets).
+After networking is deployed, the next module is `data-lake` (the five S3 buckets).
 
-Then **iam-metadata** (KMS key, IAM roles) — which uses the bucket names from `data-lake`.
+Then `iam-metadata` (the KMS key and IAM roles), which uses the bucket names from `data-lake`.
 
 Then all other modules which use `vpc_id` and `private_subnet_ids` from this module.
 
 ---
 
-## Files in This Module
+## Files in this module
 
 | File | Purpose |
 |---|---|
-| `main.tf` | All resource definitions (VPC, subnets, routes, endpoint) |
+| `main.tf` | All resource definitions: VPC, subnets, route tables, Internet Gateway, S3 endpoint |
 | `variables.tf` | Input variable declarations |
-| `outputs.tf` | Values exported for other modules to consume |
+| `outputs.tf` | Values exported for other modules to use |

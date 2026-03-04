@@ -2,36 +2,35 @@
 
 **Location:** `terraform-platform-infra-live/modules/ingestion/`
 
-**Part of:** Terraform Platform Infra — Data Platform Layer
-
-**Depends on:** `networking` (vpc, subnets), `iam-metadata` (kms_key_arn, dms_s3_role_arn), `data-lake` (bronze_bucket_name)
+**Depends on:** `networking` (vpc_id, private_subnet_ids), `iam-metadata` (kms_key_arn, dms_s3_role_arn), `data-lake` (bronze_bucket_name)
 
 ---
 
-## What This Module Does
+## What this module does
 
-This module builds the **data entry point** for the entire platform. It answers the question: "How does data get from the source application database into the S3 data lake?"
+This module builds the entry point for data into the platform. It answers one question: how does data get from a PostgreSQL (a popular open-source relational database) application database into the S3 (Simple Storage Service) data lake?
 
-The answer is **CDC — Change Data Capture** — using AWS DMS (Database Migration Service).
+The answer is CDC (Change Data Capture) using AWS DMS (Database Migration Service).
 
-Instead of copying the entire database every night (a "full extract"), CDC captures every individual change (insert, update, delete) as it happens and streams it into the Bronze S3 bucket as Parquet files. This is faster, cheaper, and more accurate.
+Instead of copying the full database every night, CDC captures every individual change as it happens: each row inserted, updated, or deleted. DMS reads these changes and writes them as Parquet files (a compact, column-organised file format) into the Bronze S3 bucket in near real time. This approach is faster, uses less storage, and keeps a precise record of exactly what changed and when.
 
 ---
 
-## The Ingestion Architecture
+## The ingestion architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                          VPC (Private Subnets)                      │
+│                    VPC (Virtual Private Cloud)                      │
+│                        Private Subnets                              │
 │                                                                     │
 │   ┌──────────────────────────┐         ┌──────────────────────────┐ │
 │   │   RDS PostgreSQL         │         │   DMS Replication        │ │
 │   │   Source Database        │◄────────│   Instance               │ │
 │   │                          │  reads  │                          │ │
-│   │   - Logical replication  │  WAL    │   - Reads PostgreSQL WAL │ │
-│   │     enabled              │         │   - Converts to Parquet  │ │
-│   │   - Security group       │         │   - Writes to Bronze S3  │ │
-│   │     allows DMS only      │         │                          │ │
+│   │   Logical replication    │  WAL    │   Reads PostgreSQL WAL   │ │
+│   │   enabled                │         │   Converts to Parquet    │ │
+│   │   Security group         │         │   Writes to Bronze S3    │ │
+│   │   allows DMS only        │         │                          │ │
 │   └──────────────────────────┘         └────────────┬─────────────┘ │
 │                                                     │               │
 └─────────────────────────────────────────────────────┼───────────────┘
@@ -51,14 +50,14 @@ Instead of copying the entire database every night (a "full extract"), CDC captu
 
 ## What is CDC (Change Data Capture)?
 
-PostgreSQL maintains an internal journal called the **Write-Ahead Log (WAL)**. Every INSERT, UPDATE, and DELETE written to the database is first recorded in this log before being applied to the actual tables.
+PostgreSQL keeps an internal journal called the WAL (Write-Ahead Log). Every INSERT, UPDATE, and DELETE is written to this log before it is applied to the actual database tables. This is how PostgreSQL guarantees it can recover from a crash: even if the database restarts unexpectedly, the WAL contains a record of every operation that needs to be replayed.
 
-AWS DMS reads this WAL log and converts each entry into a structured record. For each change, DMS captures:
-- The changed row's data
-- The operation type: `I` (Insert), `U` (Update), or `D` (Delete)
-- A timestamp
+DMS connects to PostgreSQL and reads this WAL log. For each change it finds, DMS captures:
+- The full row of data after the change
+- The operation type: `I` for Insert, `U` for Update, or `D` for Delete
+- A timestamp recording when the change was captured
 
-These records are written as Parquet files to the Bronze S3 bucket.
+These records are written as Parquet files to the Bronze S3 bucket, organised by date.
 
 **Example Bronze record for an INSERT:**
 
@@ -71,7 +70,7 @@ amount: 99.99
 status: "pending"
 ```
 
-**Example Bronze record for an UPDATE (status changed to "shipped"):**
+**Example Bronze record for an UPDATE (the status changed to "shipped"):**
 
 ```
 _dms_timestamp: 2024-01-15T14:30:00Z
@@ -82,13 +81,15 @@ amount: 99.99
 status: "shipped"
 ```
 
-The Glue Silver job later reads both records and produces one Silver record showing the current state: `status = "shipped"`.
+The Bronze bucket now has two records for `order_id 12345`: the original insert and the later update. Bronze never deletes or modifies anything. The Glue (AWS's managed data integration service) Silver job reads both records and produces one Silver record showing the current state: `status = "shipped"`.
 
 ---
 
-## Resources Created
+## Resources created
 
-### 1. Security Group — RDS
+### 1. Security group for RDS
+
+A security group is a virtual firewall that controls what network traffic is allowed in and out of a service. AWS uses security groups instead of IP address rules wherever possible because IP addresses change but security group membership stays stable.
 
 ```hcl
 resource "aws_security_group" "rds" {
@@ -101,20 +102,18 @@ resource "aws_security_group_rule" "rds_ingress_dms" {
   from_port                = 5432
   to_port                  = 5432
   protocol                 = "tcp"
-  source_security_group_id = aws_security_group.dms.id   # Only DMS can connect
+  source_security_group_id = aws_security_group.dms.id
   security_group_id        = aws_security_group.rds.id
 }
 ```
 
-**What a security group is:** Think of it as a firewall attached to a service. It has inbound rules (what traffic is allowed in) and outbound rules (what traffic is allowed out).
+Port 5432 is the default port PostgreSQL listens on. The `source_security_group_id` rule means: "Allow inbound TCP traffic on port 5432, but only from resources that are members of the DMS security group." This is more secure than allowing a specific IP address, because the DMS replication instance can restart and get a new IP address, but it always stays in the same security group.
 
-**Port 5432:** PostgreSQL's default port.
-
-**`source_security_group_id = aws_security_group.dms.id`:** This is a security group reference rule. Instead of allowing a specific IP address (which changes every time DMS restarts), this rule says "allow inbound on port 5432 from any resource that belongs to the DMS security group." This is more robust and secure.
+Nothing else is allowed to connect to the RDS (Relational Database Service) instance. Not a laptop, not another service, only DMS.
 
 ---
 
-### 2. Security Group — DMS
+### 2. Security group for DMS
 
 ```hcl
 resource "aws_security_group" "dms" {
@@ -123,11 +122,13 @@ resource "aws_security_group" "dms" {
 }
 ```
 
-Outbound only: DMS needs to reach RDS (port 5432) and S3 (via the VPC endpoint, no specific port needed).
+DMS needs to send traffic outbound to two places: port 5432 on RDS (to read the WAL log), and S3 (to write Parquet files). The S3 traffic goes through the S3 Gateway VPC (Virtual Private Cloud) Endpoint created in the networking module, so no internet access is needed for that. The RDS traffic stays inside the VPC.
 
 ---
 
-### 3. RDS Parameter Group — Enable Logical Replication
+### 3. RDS parameter group
+
+A parameter group is a collection of database configuration settings. AWS applies these settings when the RDS instance starts. I create a custom parameter group instead of using the default one because I need to enable logical replication, which is off by default.
 
 ```hcl
 resource "aws_db_parameter_group" "postgres" {
@@ -148,17 +149,15 @@ resource "aws_db_parameter_group" "postgres" {
 }
 ```
 
-**What a parameter group is:** A collection of configuration settings for a database engine. AWS applies these settings when the RDS instance starts.
+**`rds.logical_replication = 1`:** By default, PostgreSQL's WAL records just enough information to recover the database after a crash. This is called physical replication. For CDC, I need logical replication, which records the full before and after state of every row change so DMS can understand exactly what changed. Setting this to `1` switches PostgreSQL into logical replication mode.
 
-**`rds.logical_replication = 1`:** This is the most critical setting for CDC. By default, PostgreSQL's WAL records only enough information to recover the database (physical replication). For CDC (logical replication), PostgreSQL needs to record the full before/after state of every row change. Setting this to `1` enables that mode.
+**`wal_sender_timeout = 0`:** By default, PostgreSQL disconnects any WAL reader (like DMS) that has been idle for 60 seconds. If DMS gets disconnected, it has to reconnect and resume, which can cause brief gaps or duplicates. Setting this to `0` disables the timeout entirely, keeping the DMS connection stable.
 
-**`wal_sender_timeout = 0`:** By default, PostgreSQL disconnects a WAL sender (like DMS) if it has been idle for 60 seconds. Setting this to `0` disables that timeout, preventing DMS from repeatedly reconnecting.
-
-**`apply_method = "pending-reboot"`:** These settings require a database restart to take effect. After first applying Terraform, you need to reboot the RDS instance once for logical replication to activate.
+**`apply_method = "pending-reboot"`:** These two settings require a full database restart to take effect. After the first `terraform apply`, I reboot the RDS instance once and then logical replication is active. I only have to do this once.
 
 ---
 
-### 4. RDS Subnet Group
+### 4. RDS subnet group
 
 ```hcl
 resource "aws_db_subnet_group" "this" {
@@ -167,11 +166,11 @@ resource "aws_db_subnet_group" "this" {
 }
 ```
 
-**What it is:** RDS requires a subnet group that tells it which subnets it can deploy into. By specifying both private subnets (in different AZs), RDS can choose the best one for primary placement and use the other for Multi-AZ standby.
+RDS requires a subnet group before it can deploy. The subnet group tells RDS which subnets are available for placement. I pass both private subnets (from the networking module) so RDS can choose the right AZ (Availability Zone, which is an independent data centre within the same AWS region) for the primary instance and use the other for a standby in Multi-AZ mode.
 
 ---
 
-### 5. RDS PostgreSQL Instance — The Source Database
+### 5. RDS PostgreSQL instance
 
 ```hcl
 resource "aws_db_instance" "source" {
@@ -200,21 +199,21 @@ resource "aws_db_instance" "source" {
 }
 ```
 
-**In a real production scenario:** This would be your existing application's RDS database — not a database you create with Terraform. You would point DMS at your existing RDS endpoint. For this platform, we provision the source database as well so we have a complete, self-contained environment to test with.
+In a real production setup, the source database would already exist (it would be the application's existing database), and I would simply point DMS at it. For this platform I create an RDS instance as the source so I have a self-contained environment to test with. I can insert, update, and delete rows in this database and watch the changes flow through the pipeline.
 
-**`storage_encrypted = true` + `kms_key_id`:** The database's storage volume (the physical disk) is encrypted using the platform KMS key.
+**`storage_encrypted = true` and `kms_key_id`:** The physical disk that holds the database files is encrypted using the platform KMS key. If someone physically removed the storage from AWS's data centre, they would see only encrypted bytes.
 
-**`backup_retention_period = 7`:** AWS takes daily automated snapshots and keeps the last 7 days. You can restore the database to any point in the last 7 days.
+**`backup_retention_period = 7`:** AWS takes automated daily snapshots of the database and keeps the last 7 days. I can restore the database to any point within those 7 days if something goes wrong.
 
-**`deletion_protection = var.deletion_protection`:** In production, this prevents anyone from deleting the database (even if they run `terraform destroy`). In dev, it is `false` so you can clean up resources easily.
+**`deletion_protection = var.deletion_protection`:** In production this is `true`, which means Terraform and the AWS console both refuse to delete the database. This protects real data from being accidentally wiped. In dev it is `false` so I can run `terraform destroy` without manually disabling deletion protection first.
 
-**`skip_final_snapshot = !var.deletion_protection`:** In production, when a database IS deleted, RDS takes one final snapshot before deletion. In dev, this is skipped so `terraform destroy` completes quickly.
+**`skip_final_snapshot = !var.deletion_protection`:** In production, when a database is deleted, AWS takes one final snapshot before deletion so I have a last backup. In dev, I skip this because it would slow down a `terraform destroy` during testing.
 
-**`multi_az = var.multi_az`:** In production, Multi-AZ keeps a synchronous standby replica in a different AZ. If the primary fails, RDS automatically fails over with no data loss.
+**`multi_az = var.multi_az`:** In production, Multi-AZ keeps a synchronous standby copy of the database in a different AZ. If the primary database fails, RDS automatically switches to the standby with no manual action needed. In dev, I set this to `false` to save costs.
 
 ---
 
-### 6. DMS Replication Subnet Group
+### 6. DMS replication subnet group
 
 ```hcl
 resource "aws_dms_replication_subnet_group" "this" {
@@ -223,11 +222,11 @@ resource "aws_dms_replication_subnet_group" "this" {
 }
 ```
 
-Same concept as the RDS subnet group — tells DMS which private subnets to deploy its replication instance into.
+This works the same way as the RDS subnet group. DMS needs to know which private subnets it can deploy its replication instance into. I pass both private subnets so DMS can choose the right one.
 
 ---
 
-### 7. DMS Replication Instance
+### 7. DMS replication instance
 
 ```hcl
 resource "aws_dms_replication_instance" "this" {
@@ -244,15 +243,17 @@ resource "aws_dms_replication_instance" "this" {
 }
 ```
 
-**What the replication instance is:** It is an EC2 instance (managed by AWS) that runs the DMS replication software. It connects to the source (RDS) and target (S3), reads changes, and writes them out.
+The replication instance is a managed EC2 (Elastic Compute Cloud) virtual machine that runs the DMS replication software. I do not SSH into it or manage it. AWS handles all the operating system maintenance. It reads from the RDS source, converts the WAL log entries into Parquet records, and writes them to the Bronze S3 bucket.
 
 **`publicly_accessible = false`:** The replication instance stays inside the VPC. No public internet access.
 
-**`engine_version = "3.5.3"`:** DMS engine version. This determines what database sources and targets are supported and what bug fixes are included.
+**`engine_version = "3.5.3"`:** The DMS engine version determines which source and target database types are supported and which bug fixes are included.
+
+**`auto_minor_version_upgrade = true`:** AWS automatically upgrades to new minor versions (like 3.5.3 to 3.5.4) during maintenance windows. Minor versions contain bug fixes and do not change how the engine works.
 
 ---
 
-### 8. DMS Source Endpoint — Points at RDS
+### 8. DMS source endpoint
 
 ```hcl
 resource "aws_dms_endpoint" "source" {
@@ -266,13 +267,11 @@ resource "aws_dms_endpoint" "source" {
 }
 ```
 
-**What an endpoint is:** An endpoint is DMS's connection configuration. The source endpoint tells DMS where the source database is and how to authenticate.
-
-**`server_name = aws_db_instance.source.address`:** Instead of hardcoding an IP address, we reference the RDS instance's hostname directly. Terraform resolves this automatically.
+An endpoint is DMS's connection configuration. The source endpoint tells DMS where the source database lives and how to authenticate. `server_name = aws_db_instance.source.address` references the RDS hostname directly from the Terraform resource, so I do not hardcode any IP addresses or hostnames.
 
 ---
 
-### 9. DMS Target Endpoint — S3 Bronze Bucket (Parquet)
+### 9. DMS target endpoint (Bronze S3 bucket)
 
 ```hcl
 resource "aws_dms_endpoint" "target_s3" {
@@ -296,22 +295,23 @@ resource "aws_dms_endpoint" "target_s3" {
 }
 ```
 
-**Key settings explained:**
+The target endpoint tells DMS where to write the output and in what format.
 
-| Setting | Value | Meaning |
+| Setting | Value | What it means |
 |---|---|---|
-| `data_format` | `parquet` | Write columnar Parquet files instead of CSV. Parquet is 5-10x smaller and 10-100x faster to query |
-| `parquet_version` | `parquet-2-0` | Use Parquet v2 format, which supports more data types including timestamps with nanosecond precision |
-| `compression_type` | `GZIP` | Compress Parquet files with GZIP. Reduces S3 storage costs by 60-80% |
-| `date_partition_enabled` | `true` | Create separate folders for each day: `raw/orders/20240115/` |
-| `date_partition_sequence` | `YYYYMMDD` | Folder naming format |
-| `timestamp_column_name` | `_dms_timestamp` | Add a `_dms_timestamp` column to every record showing when DMS captured the change |
-| `include_op_for_full_load` | `true` | Include the operation column (`I`/`U`/`D`) even for the initial full load |
-| `cdc_inserts_and_updates` | `true` | Capture both inserts and updates (not just inserts) |
+| `data_format` | `parquet` | Write Parquet files instead of CSV (Comma-Separated Values). Parquet is a columnar format that is 5 to 10 times smaller and much faster to query than CSV |
+| `parquet_version` | `parquet-2-0` | Use Parquet version 2, which supports more data types including timestamps with nanosecond precision |
+| `compression_type` | `GZIP` | Compress each Parquet file using GZIP (GNU Zip). This reduces S3 storage costs by 60 to 80 percent |
+| `date_partition_enabled` | `true` | Create a separate folder for each day: `raw/orders/20240115/` |
+| `date_partition_sequence` | `YYYYMMDD` | The date folder naming format: year, month, day |
+| `timestamp_column_name` | `_dms_timestamp` | Add a column to every row recording when DMS captured the change |
+| `include_op_for_full_load` | `true` | Include the operation column (I, U, D) even during the initial full data copy, not just during ongoing CDC |
+| `cdc_inserts_and_updates` | `true` | Capture both inserts and updates during CDC (not just inserts) |
+| `cdc_deletes_option` | `all-deletes` | Capture delete operations too, so I can track records that were removed from the source |
 
 ---
 
-### 10. DMS Replication Task — Full Load + CDC
+### 10. DMS replication task
 
 ```hcl
 resource "aws_dms_replication_task" "cdc" {
@@ -322,108 +322,114 @@ resource "aws_dms_replication_task" "cdc" {
       "rule-type"    = "selection"
       "rule-action"  = "include"
       "object-locator" = {
-        "schema-name" = "%"   # % means all schemas
-        "table-name"  = "%"   # % means all tables
+        "schema-name" = "%"
+        "table-name"  = "%"
       }
     }]
   })
 }
 ```
 
-**`migration_type = "full-load-and-cdc"`:** DMS performs two phases:
+The replication task is the actual job that reads from the source endpoint and writes to the target endpoint.
 
-1. **Full load:** Copies the entire current state of all tables into Bronze. This creates the baseline.
-2. **CDC (ongoing):** After the full load, DMS switches to reading the WAL and capturing changes in real time.
+**`migration_type = "full-load-and-cdc"`:** DMS runs in two phases. First, it does a full load: it copies the entire current state of all tables into the Bronze bucket. This gives me a complete baseline. Second, after the full load is done, DMS switches to CDC mode and reads the WAL continuously, capturing every change as it happens.
 
-**`table_mappings`:** The `%` wildcard means "include all schemas and all tables." In production, you would narrow this to specific tables:
+**`table_mappings`:** The `%` wildcard means include all schemas and all tables. In production I would narrow this to specific tables. For example:
+
 ```json
 "schema-name": "public",
 "table-name": "orders"
 ```
 
-**`replication_task_settings`:** Configures LOB (Large Object) handling, maximum sub-tasks for parallel full load, and CloudWatch logging.
+But for development I include everything so I can test with any table I create in the source database.
+
+**LOB (Large Object) handling:** The task settings also configure how DMS handles large column values (like long text fields or binary data). The default LOB mode allows DMS to fetch these in chunks if they are too large for a single transfer.
 
 ---
 
-## Module Inputs (Variables)
+## Module inputs (variables)
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| `environment` | string | — | `dev`, `staging`, or `prod` |
-| `name_prefix` | string | — | Global naming prefix |
-| `vpc_id` | string | — | VPC ID from `networking` module |
-| `private_subnet_ids` | list(string) | — | Private subnet IDs from `networking` module |
-| `kms_key_arn` | string | — | KMS key ARN from `iam-metadata` module |
-| `bronze_bucket_name` | string | — | Bronze bucket name from `data-lake` module |
-| `dms_s3_role_arn` | string | — | DMS S3 role ARN from `iam-metadata` module |
-| `db_password` | string | — | RDS master password (sensitive — never commit this) |
-| `db_name` | string | `appdb` | Database name on RDS |
+| `environment` | string | required | `dev`, `staging`, or `prod` |
+| `name_prefix` | string | required | Short prefix for all resource names |
+| `vpc_id` | string | required | VPC ID from the `networking` module |
+| `private_subnet_ids` | list(string) | required | Private subnet IDs from the `networking` module |
+| `kms_key_arn` | string | required | KMS key ARN (Amazon Resource Name) from the `iam-metadata` module |
+| `bronze_bucket_name` | string | required | Bronze bucket name from the `data-lake` module |
+| `dms_s3_role_arn` | string | required | DMS S3 role ARN from the `iam-metadata` module |
+| `db_password` | string | required | RDS master password (never commit this to Git) |
+| `db_name` | string | `appdb` | Name of the database inside the RDS instance |
 | `db_username` | string | `dbadmin` | RDS master username |
-| `db_instance_class` | string | `db.t3.micro` | RDS compute tier |
-| `db_allocated_storage` | number | `20` | RDS disk size in GB |
-| `dms_instance_class` | string | `dms.t3.micro` | DMS replication instance compute tier |
-| `multi_az` | bool | `false` | Enable Multi-AZ for RDS + DMS |
-| `deletion_protection` | bool | `false` | Protect RDS from accidental deletion |
+| `db_instance_class` | string | `db.t3.micro` | RDS compute size (determines CPU and memory) |
+| `db_allocated_storage` | number | `20` | RDS disk size in gigabytes |
+| `dms_instance_class` | string | `dms.t3.micro` | DMS replication instance compute size |
+| `multi_az` | bool | `false` | Enable Multi-AZ for RDS and DMS (recommended for production) |
+| `deletion_protection` | bool | `false` | Protect RDS from accidental deletion (set to `true` in production) |
 
 ---
 
-## Sensitive Variables — How to Provide Passwords
+## Sensitive variables
 
-**Never put passwords in your `.tf` files or commit them to Git.**
+The `db_password` variable has no default and must be provided every time Terraform runs. Never put passwords in a `.tf` file or commit them to a Git repository.
 
-Provide them via:
+**Option 1 - Environment variable (easiest):**
 
-**Option 1 — Environment variable:**
 ```bash
 export TF_VAR_db_password="YourSecurePassword123!"
 make apply dev
 ```
 
-**Option 2 — tfvars file (excluded from git):**
-```bash
-# File: environments/dev/secret.tfvars  (added to .gitignore)
-db_password            = "YourSecurePassword123!"
-redshift_admin_password = "AnotherSecurePassword456!"
+Terraform automatically reads any environment variable that starts with `TF_VAR_` and maps it to the matching Terraform variable name.
 
-# Apply with:
+**Option 2 - tfvars file (kept out of Git):**
+
+```bash
+# Create this file: environments/dev/secret.tfvars
+# Add secret.tfvars to your .gitignore file
+
+db_password = "YourSecurePassword123!"
+
+# Then apply with:
 terraform apply -var-file="secret.tfvars"
 ```
 
-**Option 3 — AWS Secrets Manager (production best practice):**
-Retrieve the password from Secrets Manager in your Terraform code using a `data "aws_secretsmanager_secret_version"` data source.
-
 ---
 
-## Module Outputs
+## Module outputs
 
 | Output | Description |
 |---|---|
-| `rds_endpoint` | RDS hostname — used by application teams to connect |
-| `rds_port` | RDS port (5432) |
-| `rds_identifier` | RDS instance identifier |
-| `rds_security_group_id` | Security group ID — can be referenced by other modules that need RDS access |
-| `dms_security_group_id` | DMS security group ID |
-| `dms_replication_instance_arn` | DMS replication instance ARN |
-| `dms_replication_task_arn` | DMS task ARN — used to start/stop the task via CLI or Airflow |
+| `rds_endpoint` | The RDS hostname. Application teams use this to connect their app to the database |
+| `rds_port` | The RDS port (5432) |
+| `rds_identifier` | The RDS instance identifier, used in CLI commands like the reboot command |
+| `rds_security_group_id` | The security group ID. Other modules can reference this if they need to allow traffic to RDS |
+| `dms_security_group_id` | The DMS security group ID |
+| `dms_replication_instance_arn` | The DMS replication instance ARN |
+| `dms_replication_task_arn` | The DMS task ARN (Amazon Resource Name). I pass this to the Airflow DAG so it can start and monitor the task |
 
 ---
 
-## How to Deploy
+## How to deploy
 
-**Important:** Run the `iam-metadata` module first — DMS needs the `dms-vpc-role` and `dms-cloudwatch-logs-role` IAM roles to exist before creating a replication instance.
+**Important:** Run the `iam-metadata` module before this one. The DMS replication instance creation requires `dms-vpc-role` and `dms-cloudwatch-logs-role` to already exist in the AWS account. If they do not exist, the replication instance creation fails.
 
 ```bash
 aws sso login --profile dev-admin
+```
 
-# From terraform-platform-infra-live/
+SSO (Single Sign-On) refreshes my temporary AWS credentials before I run any Terraform command.
+
+```bash
+# From inside terraform-platform-infra-live/
 make init dev
 make plan dev
 make apply dev
 ```
 
-### After First Apply — Enable CDC
+### After the first apply: enable CDC
 
-After Terraform creates the RDS instance, logical replication requires a database reboot:
+The logical replication parameter group setting requires a database restart to take effect. After the first `terraform apply`, I reboot the RDS instance:
 
 ```bash
 aws rds reboot-db-instance \
@@ -431,7 +437,11 @@ aws rds reboot-db-instance \
   --profile dev-admin
 ```
 
-Wait for the instance to be back in `available` state, then start the DMS task:
+I wait for the instance to return to `available` status in the RDS console. This usually takes 2 to 3 minutes.
+
+### Starting the DMS task
+
+Terraform creates the DMS task but does not start it. I start it manually using the CLI (Command Line Interface):
 
 ```bash
 aws dms start-replication-task \
@@ -440,34 +450,47 @@ aws dms start-replication-task \
   --profile dev-admin
 ```
 
+The task ARN appears in the Terraform output after `make apply dev`. The `start-replication` type means start from the beginning, running the full load first and then switching to CDC.
+
 ---
 
-## Validation Checklist
+## Validation checklist
 
-**RDS Console:**
+After `terraform apply` and after starting the task, I verify the following in the AWS console:
+
+**RDS (Relational Database Service) console:**
 - [ ] Instance `edp-dev-source-db` is in `available` state
 - [ ] Engine: PostgreSQL 16.3
 - [ ] Storage encrypted: Yes
-- [ ] Multi-AZ: matches your variable setting
-- [ ] Deletion protection: matches your variable setting
 - [ ] Parameter group: `edp-dev-postgres16`
+- [ ] Multi-AZ: matches the variable setting
 
-**DMS Console:**
+**DMS (Database Migration Service) console:**
 - [ ] Replication instance `edp-dev-dms-ri` is in `available` state
-- [ ] Source endpoint `edp-dev-source-endpoint` is in `successful` test state
-- [ ] Target endpoint `edp-dev-bronze-s3-endpoint` is in `successful` test state
+- [ ] Source endpoint connection test: successful
+- [ ] Target endpoint connection test: successful
 - [ ] Replication task `edp-dev-cdc-task` is visible
 
-**S3 Console:**
-- [ ] After starting the task, `raw/` prefix appears in the Bronze bucket
-- [ ] Parquet files are being written under `raw/{schema}/{table}/{date}/`
+**S3 (Simple Storage Service) console:**
+- [ ] After starting the task, a `raw/` folder appears in the Bronze bucket
+- [ ] Parquet files appear under `raw/{schema}/{table}/{date}/`
 
 ---
 
-## Files in This Module
+## What comes next
+
+After ingestion is running and data is landing in Bronze:
+
+1. The **`processing` module** sets up Glue jobs and the Athena (AWS's serverless SQL query engine) workgroup. The Glue job reads Bronze, resolves CDC operations, validates the schema, and writes clean records to Silver.
+2. The **`serving` module** sets up Redshift Serverless, which connects to the Gold layer via Spectrum for analyst queries and dashboard connections.
+3. The **`orchestration` module** sets up MWAA (Amazon Managed Workflows for Apache Airflow) to schedule and monitor the entire pipeline automatically.
+
+---
+
+## Files in this module
 
 | File | Purpose |
 |---|---|
-| `main.tf` | Security groups, RDS parameter group, RDS instance, DMS subnet group, DMS replication instance, DMS source + target endpoints, DMS replication task |
-| `variables.tf` | Input variables (network, credentials, sizing, behavior flags) |
+| `main.tf` | Security groups, RDS parameter group, RDS instance, DMS subnet group, DMS replication instance, DMS source and target endpoints, DMS replication task |
+| `variables.tf` | Input variable declarations including sensitive password variables |
 | `outputs.tf` | RDS endpoint, security group IDs, DMS ARNs |

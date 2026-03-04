@@ -1,813 +1,260 @@
-# Networking Module — Enterprise Data Platform
+# terraform-platform-infra-live
 
-## Overview
+This repository contains all the AWS (Amazon Web Services) infrastructure for the Enterprise Data Platform, written as Terraform code. If the `terraform-bootstrap` repository creates the filing cabinet (remote state storage), this repository builds everything inside it: the private network, the data storage buckets, the encryption keys, the permissions, the databases, the data processing environment, the data warehouse, and the pipeline orchestration system.
 
-This module provisions the foundational networking layer for the Enterprise Data Platform (EDP) inside Amazon Web Services (AWS).
-
-EDP stands for **Enterprise Data Platform**.
-
-This networking layer is mandatory because all compute services (AWS Glue, Amazon Redshift Serverless, Amazon MWAA) require controlled network boundaries, subnet placement, and secure access to Amazon S3.
-
-Without networking:
-
-* Services cannot communicate securely
-* There is no isolation
-* There is no routing control
-* There is no private access to S3
-
-This module implements enterprise-grade Virtual Private Cloud (VPC) design.
+Every AWS resource this platform needs is defined here. Nothing is created manually in the AWS console.
 
 ---
 
-# Architecture Summary
+## What lives in this repository
 
-Region: eu-central-1 (Frankfurt)
+The infrastructure is organized as modules. Each module has one job and creates a specific group of related resources. The modules are called from environment folders (dev, staging, prod), where environment-specific values are passed in.
 
-CIDR Block: 10.10.0.0/16
-
-Subnets:
-
-* 1 Public Subnet
-* 2 Private Subnets (Multi Availability Zone)
-
-Routing:
-
-* Public subnet → Internet Gateway
-* Private subnets → No internet route
-* Private subnets → S3 Gateway Endpoint
-
-This ensures:
-
-* Secure compute placement
-* No unintended internet access
-* Cost-efficient S3 access
-
----
-
-# Why Networking Is Required
-
-AWS services operate inside a VPC (Virtual Private Cloud).
-
-A VPC allows you to define:
-
-* IP address space
-* Subnet segmentation
-* Routing rules
-* Internet access rules
-* Private service access
-
-Enterprise data platforms must:
-
-* Prevent direct internet exposure
-* Restrict egress traffic
-* Support high availability across Availability Zones (AZ)
-* Enable private access to Amazon S3
-
-This module satisfies those requirements.
+```
+terraform-platform-infra-live/
+│
+├── Makefile                          Shortcuts for common Terraform commands
+│
+├── modules/
+│   ├── networking/                   VPC, subnets, route tables, S3 endpoint
+│   ├── data-lake/                    Five S3 data lake buckets
+│   ├── iam-metadata/                 KMS key, IAM roles, Glue Catalog databases
+│   ├── ingestion/                    RDS PostgreSQL database and DMS replication
+│   ├── processing/                   Glue security config and Athena workgroup
+│   ├── serving/                      Redshift Serverless namespace and workgroup
+│   └── orchestration/                MWAA environment, ECS cluster, CloudWatch logs
+│
+└── environments/
+    ├── dev/
+    │   ├── main.tf                   Calls all modules with dev-specific values
+    │   ├── variables.tf              Input variable definitions for dev
+    │   ├── providers.tf              AWS provider configuration
+    │   ├── versions.tf               Terraform and provider version locks
+    │   └── backend.tf                Remote state backend (S3 + DynamoDB)
+    │
+    ├── staging/                      Same structure as dev
+    └── prod/                         Same structure as dev
+```
 
 ---
 
-# Module Structure
+## The seven modules and what they create
 
-modules/networking/
-
-Files:
-
-* main.tf
-* variables.tf
-* outputs.tf
-
-The module is environment-agnostic and is instantiated inside:
-
-environments/dev
-environments/staging
-environments/prod
+| Module | Resources created |
+|---|---|
+| networking | VPC (Virtual Private Cloud), public subnet, two private subnets, Internet Gateway, route tables, S3 VPC Endpoint |
+| data-lake | Five S3 (Simple Storage Service) buckets: Bronze, Silver, Gold, Quarantine, Athena results |
+| iam-metadata | KMS (Key Management Service) encryption key, IAM (Identity and Access Management) roles for Glue/MWAA/Redshift/DMS, three Glue Catalog databases |
+| ingestion | RDS (Relational Database Service) PostgreSQL database, DMS (Database Migration Service) replication instance, DMS source and target endpoints, DMS replication task |
+| processing | Glue security configuration, Glue VPC connection, Athena workgroup |
+| serving | Redshift Serverless namespace and workgroup |
+| orchestration | MWAA (Amazon Managed Workflows for Apache Airflow) environment, ECS (Elastic Container Service) cluster, DAG bucket, CloudWatch log groups |
 
 ---
 
-# Resources Created
+## Module dependency order
 
-## 1. AWS VPC (Virtual Private Cloud)
+The modules depend on each other in a strict order. I cannot deploy a module until everything it depends on already exists.
 
-Resource: aws_vpc
+```
+networking
+  └── data-lake
+        └── iam-metadata
+              ├── ingestion
+              ├── processing
+              ├── serving
+              └── orchestration
+```
 
-Purpose:
-Creates a logically isolated network inside AWS.
+**Why this order:**
 
-Configuration:
-
-* CIDR block defined by variable
-* DNS support enabled
-* DNS hostnames enabled
-
-Why DNS is enabled:
-Managed services like AWS Glue and Amazon Redshift require internal DNS resolution.
-
----
-
-## 2. Internet Gateway (IGW)
-
-Resource: aws_internet_gateway
-
-Purpose:
-Allows public subnet to communicate with the internet.
-
-Important:
-Private subnets do NOT use this gateway.
+- `networking` has no dependencies. It creates the VPC and subnets. Everything else runs inside this network.
+- `data-lake` creates the S3 buckets. It needs networking to exist (for the S3 VPC endpoint association) and its bucket names are passed as inputs to modules below.
+- `iam-metadata` creates IAM roles using the bucket names from `data-lake`. The roles grant Glue, DMS, MWAA, and Redshift access to specific buckets. It also creates the KMS encryption key used by everything below.
+- `ingestion`, `processing`, `serving`, and `orchestration` all need the VPC ID, subnet IDs, KMS key ARN, and IAM role ARNs from the modules above. They can be applied in any order relative to each other, but only after `iam-metadata` exists.
 
 ---
 
-## 3. Public Subnet
+## Using the Makefile
 
-Resource: aws_subnet (public)
+I use a Makefile to avoid typing long Terraform commands with directory paths every time.
 
-Purpose:
-Hosts infrastructure that may require public routing.
+| Command | What it runs |
+|---|---|
+| `make init dev` | `cd environments/dev && terraform init` |
+| `make plan dev` | `cd environments/dev && terraform plan` |
+| `make apply dev` | `cd environments/dev && terraform apply` |
+| `make destroy dev` | `cd environments/dev && terraform destroy` |
 
-Configuration:
+Replace `dev` with `staging` or `prod` for other environments. Always log in to AWS SSO (Single Sign-On) before running any of these.
 
-* Public IP auto-assignment enabled
-* Routed to Internet Gateway
-
-This subnet is NOT used for compute workloads.
-
----
-
-## 4. Private Subnet A
-
-Resource: aws_subnet (private_a)
-
-Purpose:
-Hosts compute services.
-
-Availability Zone: eu-central-1a
-
----
-
-## 5. Private Subnet B
-
-Resource: aws_subnet (private_b)
-
-Purpose:
-Hosts compute services for high availability.
-
-Availability Zone: eu-central-1b
-
-Multi-AZ deployment ensures:
-
-* Fault tolerance
-* Service continuity
-* Redshift Serverless compatibility
-
----
-
-## 6. Route Tables
-
-### Public Route Table
-
-Routes:
-0.0.0.0/0 → Internet Gateway
-
-Purpose:
-Allow outbound internet access for public subnet.
-
-### Private Route Table
-
-No default route to internet.
-
-Purpose:
-Private subnets remain isolated.
-
----
-
-## 7. S3 Gateway VPC Endpoint
-
-Resource: aws_vpc_endpoint
-
-Type: Gateway
-
-Service: com.amazonaws.eu-central-1.s3
-
-Purpose:
-Allows private subnets to access Amazon S3 without:
-
-* NAT Gateway
-* Public internet exposure
-
-Benefits:
-
-* Lower cost
-* Increased security
-* Reduced attack surface
-
----
-
-# Naming Convention
-
-Prefix: edp
-
-edp = Enterprise Data Platform
-
-Naming pattern:
-
-edp-<environment>-<resource-type>
-
-Examples:
-
-* edp-dev-vpc
-* edp-dev-private-a
-* edp-dev-s3-endpoint
-
-This ensures:
-
-* Environment visibility
-* Clear ownership
-* Predictable resource identification
-
----
-
-# CIDR Subnetting Logic
-
-Base CIDR:
-10.10.0.0/16
-
-Subnets created using cidrsubnet function:
-
-10.10.0.0/20  → Public
-10.10.16.0/20 → Private A
-10.10.32.0/20 → Private B
-
-/20 provides 4096 IP addresses per subnet.
-
-This design leaves room for future subnet expansion.
-
----
-
-# Module Inputs
-
-Variable: environment
-Type: string
-Purpose: Identifies deployment environment
-
-Variable: vpc_cidr
-Type: string
-Purpose: Defines VPC IP range
-
-Variable: region
-Type: string
-Purpose: Defines AWS region
-
----
-
-# Module Outputs
-
-Output: vpc_id
-Purpose: Used by downstream modules
-
-Output: private_subnet_ids
-Purpose: Required by:
-
-* AWS Glue
-* Amazon Redshift Serverless
-* Amazon MWAA
-
-Output: public_subnet_id
-Purpose: Infrastructure routing (if needed)
-
----
-
-# Deployment Steps
-
-1. Authenticate
-
+```bash
 aws sso login --profile dev-admin
-
-2. Navigate to environment
-
-cd environments/dev
-
-3. Initialize Terraform
-
-terraform init
-
-Purpose:
-
-* Configure remote backend
-* Install providers
-* Register modules
-
-4. Preview changes
-
-terraform plan
-
-Purpose:
-
-* Review infrastructure changes
-
-5. Apply
-
-terraform apply
-
-Purpose:
-
-* Create infrastructure
-
----
-
-# Why No NAT Gateway?
-
-NAT = Network Address Translation
-
-NAT allows private subnets to access public internet.
-
-We intentionally avoid NAT because:
-
-* It increases cost
-* Our services only require S3 access
-* S3 Gateway Endpoint satisfies requirement
-
-This is a cost-efficient enterprise decision.
-
----
-
-# Validation Checklist
-
-After deployment verify in AWS Console:
-
-* VPC exists
-* CIDR is correct
-* Public subnet has internet route
-* Private subnets have no internet route
-* S3 endpoint attached to private route table
-
----
-
-# Next Module
-
-After networking is verified, proceed to:
-
-Data Lake Module
-
-Which will provision:
-
-* Bronze bucket
-* Silver bucket
-* Gold bucket
-* Quarantine bucket
-* Bucket policies
-* Lifecycle rules
-
-Networking must exist before data lake.
-
----
-
-# Summary
-
-This module establishes:
-
-* Network isolation
-* High availability
-* Private S3 access
-* Enterprise naming standards
-* Terraform modular architecture
-
-It is the foundation upon which all other platform services will be deployed.
-
----
-
-#  Data Lake Module — Enterprise Medallion Storage (Terraform)
-
----
-
-# 1️ Purpose of This Module
-
-The **Data Lake module** provisions the storage foundation of the Enterprise Data Platform.
-
-It creates a secure, environment-isolated, production-grade medallion architecture using:
-
-- Amazon S3 (object storage)
-- Encryption at rest
-- Versioning
-- Public access blocking
-- Deterministic naming
-- Terraform-managed lifecycle
-
-This module is designed following strict enterprise principles:
-
-- Structure before services
-- Environment isolation
-- No public exposure
-- No manual console creation
-- Fully reproducible via Terraform
-
----
-
-# 2️ What Problem This Module Solves
-
-After networking is provisioned, we need durable storage for:
-
-- Raw Change Data Capture (CDC)
-- Cleaned transformation outputs
-- Aggregated analytical datasets
-- Invalid data isolation
-- Controlled SQL query results
-
-Without this module:
-
-- Glue cannot write data
-- Athena cannot query structured datasets
-- Redshift cannot COPY from curated storage
-- There is no system of record
-
-This module establishes the storage layer of the platform.
-
----
-
-# 3️ Architecture Overview
-
-We implement a strict **Medallion Architecture**:
-
-| Layer | Purpose |
-|-------|----------|
-| Bronze | Immutable raw CDC events |
-| Silver | Cleaned & structured datasets |
-| Gold | Business aggregates |
-| Quarantine | Invalid or failed records |
-| Athena Results | Controlled SQL output location |
-
-Each layer is provisioned as an independent S3 bucket for:
-
-- IAM isolation
-- Blast-radius containment
-- Lifecycle control
-- Clear governance boundaries
-
----
-
-# 4️ Module Structure
-
-```
-
-modules/
-  data-lake/
-    main.tf
-    variables.tf
-    outputs.tf
-
-```
-
-Environment composition:
-
-```
-
-environments/
-  dev/
-    main.tf
-  staging/
-    main.tf
-  prod/
-    main.tf
-
+make init dev
+make plan dev
+make apply dev
 ```
 
 ---
 
-# 5 variables.tf
+## Sensitive variables
 
+Two variables have no defaults and must be provided at apply time. Never put these in a `.tf` file or commit them to Git.
+
+| Variable | What it is |
+|---|---|
+| `db_password` | The master password for the RDS PostgreSQL database |
+| `redshift_admin_password` | The admin password for the Redshift Serverless namespace |
+
+**Option 1 - Environment variables (easiest):**
+
+```bash
+export TF_VAR_db_password="YourSecurePassword123!"
+export TF_VAR_redshift_admin_password="AnotherSecurePassword456!"
+make apply dev
 ```
 
-######################################################
-# Environment Name
-######################################################
+Terraform automatically reads any environment variable that starts with `TF_VAR_` and maps it to the matching Terraform variable.
 
-variable "environment" {
-  description = "Deployment environment (dev, staging, prod)"
-  type        = string
-}
+**Option 2 - tfvars file (excluded from Git):**
 
-######################################################
-# Allow Force Destroy (Dev Only)
-######################################################
+```bash
+# Create environments/dev/secret.tfvars
+# Add this file to .gitignore
 
-variable "force_destroy" {
-  description = "Allow bucket deletion even if non-empty (true only in dev)"
-  type        = bool
-  default     = false
-}
+db_password             = "YourSecurePassword123!"
+redshift_admin_password = "AnotherSecurePassword456!"
 
-```
-
-## Explanation
-
-environment  
-Ensures naming isolation between dev, staging, and prod.
-
-force_destroy  
-Prevents destructive deletion in staging and production.  
-Should be set to true only in development.
-
----
-
-# 6 main.tf (Complete Logic)
-
-```
-
-######################################################
-# DATA LAKE MODULE — ENTERPRISE MEDALLION STORAGE
-######################################################
-
-######################################################
-# Current AWS Account Identity
-######################################################
-
-data "aws_caller_identity" "current" {}
-
-######################################################
-# Local Naming Convention
-######################################################
-
-locals {
-  bronze_bucket         = "edp-emeka-${var.environment}-bronze"
-  silver_bucket         = "edp-emeka-${var.environment}-silver"
-  gold_bucket           = "edp-emeka-${var.environment}-gold"
-  quarantine_bucket     = "edp-emeka-${var.environment}-quarantine"
-  athena_results_bucket = "edp-emeka-${var.environment}-athena-results"
-
-  common_tags = {
-    Environment = var.environment
-    ManagedBy   = "Terraform"
-    Owner       = "Emeka"
-    Project     = "EnterpriseDataPlatform"
-    AccountID   = data.aws_caller_identity.current.account_id
-  }
-}
-
-######################################################
-# Bronze Bucket — Raw CDC
-######################################################
-
-resource "aws_s3_bucket" "bronze" {
-  bucket        = local.bronze_bucket
-  force_destroy = var.force_destroy
-
-  tags = merge(local.common_tags, {
-    Name  = local.bronze_bucket
-    Layer = "Bronze"
-  })
-}
-
-######################################################
-# Silver Bucket — Cleaned Data
-######################################################
-
-resource "aws_s3_bucket" "silver" {
-  bucket        = local.silver_bucket
-  force_destroy = var.force_destroy
-
-  tags = merge(local.common_tags, {
-    Name  = local.silver_bucket
-    Layer = "Silver"
-  })
-}
-
-######################################################
-# Gold Bucket — Business Aggregates
-######################################################
-
-resource "aws_s3_bucket" "gold" {
-  bucket        = local.gold_bucket
-  force_destroy = var.force_destroy
-
-  tags = merge(local.common_tags, {
-    Name  = local.gold_bucket
-    Layer = "Gold"
-  })
-}
-
-######################################################
-# Quarantine Bucket — Invalid Records
-######################################################
-
-resource "aws_s3_bucket" "quarantine" {
-  bucket        = local.quarantine_bucket
-  force_destroy = var.force_destroy
-
-  tags = merge(local.common_tags, {
-    Name  = local.quarantine_bucket
-    Layer = "Quarantine"
-  })
-}
-
-######################################################
-# Athena Results Bucket
-######################################################
-
-resource "aws_s3_bucket" "athena_results" {
-  bucket        = local.athena_results_bucket
-  force_destroy = var.force_destroy
-
-  tags = merge(local.common_tags, {
-    Name  = local.athena_results_bucket
-    Layer = "QueryResults"
-  })
-}
-
-######################################################
-# Encryption Configuration (All Buckets)
-######################################################
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "all" {
-  for_each = {
-    bronze         = aws_s3_bucket.bronze.id
-    silver         = aws_s3_bucket.silver.id
-    gold           = aws_s3_bucket.gold.id
-    quarantine     = aws_s3_bucket.quarantine.id
-    athena_results = aws_s3_bucket.athena_results.id
-  }
-
-  bucket = each.value
-
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
-}
-
-######################################################
-# Versioning (All Buckets)
-######################################################
-
-resource "aws_s3_bucket_versioning" "all" {
-  for_each = {
-    bronze         = aws_s3_bucket.bronze.id
-    silver         = aws_s3_bucket.silver.id
-    gold           = aws_s3_bucket.gold.id
-    quarantine     = aws_s3_bucket.quarantine.id
-    athena_results = aws_s3_bucket.athena_results.id
-  }
-
-  bucket = each.value
-
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-######################################################
-# Public Access Block (All Buckets)
-######################################################
-
-resource "aws_s3_bucket_public_access_block" "all" {
-  for_each = {
-    bronze         = aws_s3_bucket.bronze.id
-    silver         = aws_s3_bucket.silver.id
-    gold           = aws_s3_bucket.gold.id
-    quarantine     = aws_s3_bucket.quarantine.id
-    athena_results = aws_s3_bucket.athena_results.id
-  }
-
-  bucket = each.value
-
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
+# Apply with:
+terraform apply -var-file="secret.tfvars"
 ```
 
 ---
 
-# 7 outputs.tf
+## Important deployment notes
 
+### 1. Apply iam-metadata before ingestion
+
+The DMS (Database Migration Service) service requires two IAM roles with fixed names to exist before I can create a replication instance:
+
+- `dms-vpc-role` - allows DMS to create network interfaces in the VPC
+- `dms-cloudwatch-logs-role` - allows DMS to write logs to CloudWatch
+
+These roles are created by the `iam-metadata` module. If I try to apply `ingestion` before `iam-metadata`, the DMS replication instance creation will fail.
+
+### 2. The two fixed DMS role names
+
+AWS DMS (Database Migration Service) looks for exactly these role names in every account. The names cannot be changed. If these roles already exist in the AWS account from a previous deployment, Terraform will fail when trying to create them again because they already exist.
+
+In that case, import them into Terraform state:
+
+```bash
+terraform import module.iam_metadata.aws_iam_role.dms_vpc dms-vpc-role
+terraform import module.iam_metadata.aws_iam_role.dms_cloudwatch dms-cloudwatch-logs-role
 ```
 
-output "bronze_bucket_name" {
-  value = aws_s3_bucket.bronze.bucket
-}
+After importing, Terraform knows these resources already exist and will manage them without trying to recreate them.
 
-output "silver_bucket_name" {
-  value = aws_s3_bucket.silver.bucket
-}
+### 3. RDS reboot after first apply
 
-output "gold_bucket_name" {
-  value = aws_s3_bucket.gold.bucket
-}
+The RDS (Relational Database Service) PostgreSQL instance needs logical replication mode enabled for CDC (Change Data Capture) to work. This is set in the parameter group, but the parameter requires a database restart to take effect.
 
-output "quarantine_bucket_name" {
-  value = aws_s3_bucket.quarantine.bucket
-}
+After the first `terraform apply`, reboot the RDS instance:
 
-output "athena_results_bucket" {
-  value = aws_s3_bucket.athena_results.bucket
-}
-
+```bash
+aws rds reboot-db-instance \
+  --db-instance-identifier edp-dev-source-db \
+  --profile dev-admin
 ```
 
-## Why Outputs Matter
+Wait for the instance to return to `available` status before proceeding.
 
-These outputs allow downstream modules to:
+### 4. Start the DMS task manually
 
-- Reference bucket names
-- Attach IAM policies
-- Configure Glue jobs
-- Configure Athena workgroups
-- Configure Redshift COPY commands
+After the infrastructure is applied and the RDS instance has been rebooted, the DMS replication task needs to be started manually. Terraform creates the task but does not start it.
 
-No bucket name should ever be hardcoded outside this module.
+```bash
+aws dms start-replication-task \
+  --replication-task-arn <task_arn_from_terraform_output> \
+  --start-replication-task-type start-replication \
+  --profile dev-admin
+```
+
+The task ARN is in the Terraform output after `make apply dev`.
 
 ---
 
-# 8 Environment Composition Example (dev)
+## Full validation checklist
 
-```
+After `make apply dev` completes successfully, verify the following in the AWS console:
 
-module "data_lake" {
-  source        = "../../modules/data-lake"
-  environment   = "dev"
-  force_destroy = true
-}
+**VPC (Virtual Private Cloud) Console:**
+- VPC `edp-dev-vpc` exists with CIDR (Classless Inter-Domain Routing) `10.10.0.0/16`
+- Three subnets exist: one public, two private (in different AZs - Availability Zones)
+- Private route table has no internet route
+- S3 VPC Endpoint is attached to the private route table
 
-```
+**S3 (Simple Storage Service) Console:**
+- Five buckets exist with the correct naming pattern
+- All buckets: encryption enabled, versioning enabled, public access blocked
 
-Staging and production:
+**KMS (Key Management Service) Console:**
+- Key with alias `alias/edp-dev-platform` exists
+- Key rotation is enabled
 
-```
+**IAM (Identity and Access Management) Console:**
+- `edp-dev-glue-role` exists
+- `edp-dev-mwaa-role` exists
+- `edp-dev-redshift-role` exists
+- `edp-dev-dms-s3-role` exists
+- `dms-vpc-role` exists
+- `dms-cloudwatch-logs-role` exists
 
-module "data_lake" {
-  source        = "../../modules/data-lake"
-  environment   = "staging"
-  force_destroy = false
-}
+**Glue Console:**
+- Three databases: `edp_dev_bronze`, `edp_dev_silver`, `edp_dev_gold`
 
-```
+**RDS (Relational Database Service) Console:**
+- Instance `edp-dev-source-db` is in `available` state
+- Storage encrypted: Yes
+- Parameter group: `edp-dev-postgres16`
 
----
+**DMS (Database Migration Service) Console:**
+- Replication instance `edp-dev-dms-ri` is `available`
+- Source endpoint test connection: successful
+- Target endpoint test connection: successful
+- Replication task is visible (not yet started)
 
-# 9 Security Controls Implemented
+**Redshift Console:**
+- Namespace `edp-dev-namespace` exists
+- Workgroup `edp-dev-workgroup` exists
 
-This module enforces:
-
-- Encryption at rest (AES256)
-- Versioning enabled
-- Public access completely blocked
-- No public ACLs
-- No public policies
-- Terraform-only provisioning
-- Environment isolation
-
-These are considered **minimum enterprise storage controls**.
-
----
-
-#  What We Achieved
-
-After applying this module, we now have:
-
-- Fully provisioned medallion storage
-- Secure, private S3 buckets
-- Deterministic naming
-- Governance-ready architecture
-- Downstream integration capability
-
-At this stage, the platform includes:
-
-- Networking (VPC + private subnets)
-- Secure Data Lake (Medallion S3 buckets)
-
-The next logical layer is:
-
-Metadata (Glue Data Catalog + Athena Workgroup)
-
-This will allow structured querying of the Silver and Gold layers.
+**MWAA (Amazon Managed Workflows for Apache Airflow) Console:**
+- Environment `edp-dev-mwaa` is in `Available` state
 
 ---
 
-# 10 Deployment Commands
+## Environments
 
-```
+Each environment folder calls all the modules with environment-specific values. The code is identical across dev, staging, and prod. Only the variable values change.
 
-aws sso login --profile dev-admin
-cd environments/dev
-terraform init
-terraform plan
-terraform apply
+| Environment | AWS profile | VPC CIDR | Active development |
+|---|---|---|---|
+| dev | dev-admin | 10.10.0.0/16 | Yes - this is where I build |
+| staging | staging-admin | 10.20.0.0/16 | Temporary - spin up to validate, then destroy |
+| prod | prod-admin | 10.30.0.0/16 | Temporary - spin up to confirm, then destroy |
 
-```
+I keep dev running when I am actively building. I destroy it between sessions to save costs. MWAA costs about $0.49 per hour and RDS costs about $0.013 per hour, so leaving them running overnight adds up quickly.
 
 ---
 
-# 11 Manual Validation Checklist
+## Module READMEs
 
-After apply, verify in AWS Console:
+Each module has its own documentation file with detailed explanations of every resource it creates:
 
-- 5 buckets exist
-- Encryption enabled
-- Versioning enabled
-- Public access fully blocked
-- Proper naming pattern
-- Correct tags applied
-- No public policies attached
-
-If all checks pass, the storage layer is production-ready.
+- `modules/networking/networking.md`
+- `modules/data-lake/data-lake.md`
+- `modules/iam-metadata/iam-metadata.md`
+- `modules/ingestion/ingestion.md`
+- `modules/processing/` (coming soon)
+- `modules/serving/` (coming soon)
+- `modules/orchestration/` (coming soon)
