@@ -142,8 +142,9 @@ The trust policy for this role allows both `airflow.amazonaws.com` and `airflow-
 | Write to CloudWatch logs | Airflow writes scheduler, worker, and webserver logs here |
 | Publish CloudWatch metrics | Airflow publishes health and performance metrics |
 | Access SQS (Simple Queue Service) on Celery queues | MWAA uses Apache Celery internally to distribute tasks to workers |
-| Use the KMS key | Encrypts Airflow connection strings and environment variables |
+| Use the KMS key | Encrypts Airflow connection strings, environment variables, and decrypts SSM SecureString parameters |
 | Call Glue StartJobRun and GetJobRun | Airflow DAGs trigger Glue jobs and wait for them to finish |
+| Read SSM parameters at `/edp/{env}/*` | Airflow DAGs fetch the RDS and Redshift passwords from SSM Parameter Store at runtime. No passwords are stored in Airflow connections or environment variables |
 
 The DAGs bucket name is constructed using the same naming formula as the bucket the `orchestration` module will create:
 

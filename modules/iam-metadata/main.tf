@@ -235,6 +235,37 @@ resource "aws_iam_role_policy" "mwaa_execution" {
   policy = data.aws_iam_policy_document.mwaa_execution.json
 }
 
+# Airflow needs to read database passwords from SSM to create
+# its RDS and Redshift connections at startup.
+data "aws_iam_policy_document" "mwaa_ssm" {
+  statement {
+    sid    = "ReadPlatformSecrets"
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+    ]
+    resources = [
+      "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/edp/${var.environment}/*",
+    ]
+  }
+
+  statement {
+    sid    = "DecryptWithPlatformKey"
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+    ]
+    resources = [aws_kms_key.platform.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "mwaa_ssm" {
+  name   = "${var.name_prefix}-${var.environment}-mwaa-ssm"
+  role   = aws_iam_role.mwaa.id
+  policy = data.aws_iam_policy_document.mwaa_ssm.json
+}
+
 ######################################################
 # IAM Role – Redshift Serverless
 ######################################################

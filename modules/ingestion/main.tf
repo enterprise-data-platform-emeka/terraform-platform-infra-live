@@ -7,6 +7,11 @@ locals {
     Project     = "EnterpriseDataPlatform"
     AccountID   = data.aws_caller_identity.current.account_id
   }
+
+  # Derives "postgres16" from "16.6", "postgres15" from "15.4", etc.
+  # Keeps the parameter group family in sync with the engine version automatically.
+  pg_major_version = split(".", var.db_engine_version)[0]
+  pg_family        = "postgres${local.pg_major_version}"
 }
 
 ######################################################
@@ -64,8 +69,8 @@ resource "aws_security_group_rule" "dms_egress" {
 ######################################################
 
 resource "aws_db_parameter_group" "postgres" {
-  name        = "${var.name_prefix}-${var.environment}-postgres16"
-  family      = "postgres16"
+  name        = "${var.name_prefix}-${var.environment}-${local.pg_family}"
+  family      = local.pg_family
   description = "EDP source PostgreSQL - logical replication enabled for DMS CDC"
   tags        = local.common_tags
 
@@ -99,7 +104,7 @@ resource "aws_db_subnet_group" "this" {
 resource "aws_db_instance" "source" {
   identifier        = "${var.name_prefix}-${var.environment}-source-db"
   engine            = "postgres"
-  engine_version    = "16.6"
+  engine_version    = var.db_engine_version
   instance_class    = var.db_instance_class
   allocated_storage = var.db_allocated_storage
 
@@ -114,7 +119,7 @@ resource "aws_db_instance" "source" {
   storage_encrypted = true
   kms_key_id        = var.kms_key_arn
 
-  backup_retention_period = 7
+  backup_retention_period = var.backup_retention_period
   deletion_protection     = var.deletion_protection
   skip_final_snapshot     = !var.deletion_protection
 
@@ -141,7 +146,7 @@ resource "aws_dms_replication_subnet_group" "this" {
 resource "aws_dms_replication_instance" "this" {
   replication_instance_id    = "${var.name_prefix}-${var.environment}-dms-ri"
   replication_instance_class = var.dms_instance_class
-  allocated_storage          = 50
+  allocated_storage          = var.dms_allocated_storage
   publicly_accessible         = false
   multi_az                    = var.multi_az
   auto_minor_version_upgrade  = true
@@ -179,27 +184,45 @@ resource "aws_dms_endpoint" "source" {
 
 ######################################################
 # DMS Target Endpoint – S3 Bronze (Parquet + CDC partitioning)
+#
+# aws_dms_s3_endpoint is the dedicated resource for S3 targets/sources
+# in AWS provider 5.x. The s3_settings nested block was removed from
+# aws_dms_endpoint in that version.
 ######################################################
 
-resource "aws_dms_endpoint" "target_s3" {
-  endpoint_id   = "${var.name_prefix}-${var.environment}-bronze-s3-endpoint"
-  endpoint_type = "target"
-  engine_name   = "s3"
+resource "aws_dms_s3_endpoint" "target_s3" {
+  endpoint_id             = "${var.name_prefix}-${var.environment}-bronze-s3-endpoint"
+  endpoint_type           = "target"
+  service_access_role_arn = var.dms_s3_role_arn
 
-  s3_settings {
-    bucket_name               = var.bronze_bucket_name
-    bucket_folder             = "raw"
-    service_access_role_arn   = var.dms_s3_role_arn
-    compression_type          = "GZIP"
-    data_format               = "parquet"
-    parquet_version           = "parquet-2-0"
-    parquet_timestamp_in_millisecond = true
-    date_partition_enabled    = true
-    date_partition_sequence   = "YYYYMMDD"
-    timestamp_column_name     = "_dms_timestamp"
-    include_op_for_full_load  = true
-    cdc_inserts_and_updates   = true
-  }
+  bucket_name                      = var.bronze_bucket_name
+  bucket_folder                    = "raw"
+  compression_type                 = "GZIP"
+  data_format                      = "parquet"
+  parquet_version                  = "parquet-2-0"
+  parquet_timestamp_in_millisecond = true
+  date_partition_enabled           = true
+  date_partition_sequence          = "YYYYMMDD"
+  timestamp_column_name            = "_dms_timestamp"
+  include_op_for_full_load         = true
+  cdc_inserts_and_updates          = true
+
+  tags = local.common_tags
+}
+
+######################################################
+# SSM Parameter – RDS password
+#
+# Stored here so every downstream tool (simulator, Airflow, ops agent)
+# can fetch it by name without any password ever living in a file.
+######################################################
+
+resource "aws_ssm_parameter" "db_password" {
+  name        = "/edp/${var.environment}/rds/db_password"
+  description = "RDS PostgreSQL master password — ${var.environment}"
+  type        = "SecureString"
+  value       = var.db_password
+  key_id      = var.kms_key_arn
 
   tags = local.common_tags
 }
@@ -211,7 +234,7 @@ resource "aws_dms_endpoint" "target_s3" {
 resource "aws_dms_replication_task" "cdc" {
   replication_task_id      = "${var.name_prefix}-${var.environment}-cdc-task"
   source_endpoint_arn      = aws_dms_endpoint.source.endpoint_arn
-  target_endpoint_arn      = aws_dms_endpoint.target_s3.endpoint_arn
+  target_endpoint_arn      = aws_dms_s3_endpoint.target_s3.endpoint_arn
   replication_instance_arn = aws_dms_replication_instance.this.replication_instance_arn
   migration_type           = "full-load-and-cdc"
 

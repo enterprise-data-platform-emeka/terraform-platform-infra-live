@@ -106,7 +106,7 @@ Two variables have no defaults and must be provided at apply time. Never put the
 | `db_password` | The master password for the RDS PostgreSQL database |
 | `redshift_admin_password` | The admin password for the Redshift Serverless namespace |
 
-**Option 1 - Environment variables (easiest):**
+**Recommended — environment variables:**
 
 ```bash
 export TF_VAR_db_password="YourSecurePassword123!"
@@ -114,9 +114,18 @@ export TF_VAR_redshift_admin_password="AnotherSecurePassword456!"
 make apply dev
 ```
 
-Terraform automatically reads any environment variable that starts with `TF_VAR_` and maps it to the matching Terraform variable.
+Terraform reads any `TF_VAR_*` environment variable and maps it to the matching variable.
 
-**Option 2 - tfvars file (excluded from Git):**
+**After `make apply dev` completes**, both passwords are automatically stored in AWS SSM (Systems Manager) Parameter Store as encrypted `SecureString` parameters:
+
+| SSM path | What it stores |
+|---|---|
+| `/edp/dev/rds/db_password` | RDS PostgreSQL master password |
+| `/edp/dev/redshift/admin_password` | Redshift Serverless admin password |
+
+From that point on, no tool (simulator, Airflow DAG, script) ever needs a password file. They fetch the value from SSM at runtime using the `dev-admin` AWS profile.
+
+**Alternative — tfvars file (excluded from Git):**
 
 ```bash
 # Create environments/dev/secret.tfvars
@@ -224,6 +233,10 @@ After `make apply dev` completes successfully, verify the following in the AWS c
 - Target endpoint test connection: successful
 - Replication task is visible (not yet started)
 
+**SSM (Systems Manager) Parameter Store:**
+- Parameter `/edp/dev/rds/db_password` exists as a `SecureString`
+- Parameter `/edp/dev/redshift/admin_password` exists as a `SecureString`
+
 **Redshift Console:**
 - Namespace `edp-dev-namespace` exists
 - Workgroup `edp-dev-workgroup` exists
@@ -255,6 +268,6 @@ Each module has its own documentation file with detailed explanations of every r
 - `modules/data-lake/data-lake.md`
 - `modules/iam-metadata/iam-metadata.md`
 - `modules/ingestion/ingestion.md`
+- `modules/serving/serving.md`
 - `modules/processing/` (coming soon)
-- `modules/serving/` (coming soon)
 - `modules/orchestration/` (coming soon)

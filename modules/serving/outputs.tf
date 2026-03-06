@@ -17,3 +17,8 @@ output "redshift_security_group_id" {
   description = "Security group ID for the Redshift workgroup"
   value       = aws_security_group.redshift.id
 }
+
+output "ssm_redshift_password_path" {
+  description = "SSM parameter path for the Redshift admin password — fetch with: aws ssm get-parameter --name <value> --with-decryption"
+  value       = aws_ssm_parameter.redshift_admin_password.name
+}

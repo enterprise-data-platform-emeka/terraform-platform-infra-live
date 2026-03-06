@@ -86,3 +86,24 @@ resource "aws_redshiftserverless_workgroup" "this" {
 
   depends_on = [aws_redshiftserverless_namespace.this]
 }
+
+######################################################
+# SSM Parameter – Redshift admin password
+#
+# Stored here so dbt, Airflow, and the ops agent can fetch it
+# by name without any password ever living in a file.
+######################################################
+
+resource "aws_ssm_parameter" "redshift_admin_password" {
+  name        = "/edp/${var.environment}/redshift/admin_password"
+  description = "Redshift Serverless admin password — ${var.environment}"
+  type        = "SecureString"
+  value       = var.redshift_admin_password
+  key_id      = var.kms_key_arn
+
+  tags = {
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+    Project     = "EnterpriseDataPlatform"
+  }
+}

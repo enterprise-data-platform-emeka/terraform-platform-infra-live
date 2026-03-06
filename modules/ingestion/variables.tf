@@ -51,6 +51,12 @@ variable "db_username" {
   default     = "dbadmin"
 }
 
+variable "db_engine_version" {
+  description = "PostgreSQL engine version for RDS. Controls both the engine version and the parameter group family."
+  type        = string
+  default     = "16.6"
+}
+
 variable "db_instance_class" {
   description = "RDS instance class"
   type        = string
@@ -63,10 +69,22 @@ variable "db_allocated_storage" {
   default     = 20
 }
 
+variable "backup_retention_period" {
+  description = "Number of days to retain RDS automated backups. Use 7 for dev/staging, 30 for prod."
+  type        = number
+  default     = 7
+}
+
 variable "dms_instance_class" {
   description = "DMS replication instance class"
   type        = string
   default     = "dms.t3.medium"
+}
+
+variable "dms_allocated_storage" {
+  description = "DMS replication instance allocated storage in GB"
+  type        = number
+  default     = 50
 }
 
 variable "multi_az" {

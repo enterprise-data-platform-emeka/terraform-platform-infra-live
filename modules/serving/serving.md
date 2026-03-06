@@ -132,6 +132,31 @@ A workgroup is the compute layer. It is what actually processes queries. While t
 
 ---
 
+### 4. SSM parameter for the Redshift password
+
+```hcl
+resource "aws_ssm_parameter" "redshift_admin_password" {
+  name        = "/edp/${var.environment}/redshift/admin_password"
+  description = "Redshift Serverless admin password — ${var.environment}"
+  type        = "SecureString"
+  value       = var.redshift_admin_password
+  key_id      = var.kms_key_arn
+}
+```
+
+After Terraform applies, the Redshift admin password is automatically stored in SSM (Systems Manager) Parameter Store at `/edp/{environment}/redshift/admin_password` as a `SecureString` encrypted with the platform KMS key. Any tool that needs to connect to Redshift — an Airflow DAG, a dbt profile script, a maintenance utility — can fetch it at runtime without any password file on disk:
+
+```bash
+aws ssm get-parameter \
+  --name /edp/dev/redshift/admin_password \
+  --with-decryption \
+  --query Parameter.Value \
+  --output text \
+  --profile dev-admin
+```
+
+---
+
 ## Connecting to Redshift
 
 After the workgroup is created, the endpoint appears in the Terraform output:
@@ -161,14 +186,16 @@ Since Redshift is not publicly accessible, you would need to run this from insid
 
 `redshift_admin_password` has no default and must be provided at apply time. Never put it in a `.tf` file or commit it to Git.
 
-**Option 1 - Environment variable:**
+**Recommended — environment variable:**
 
 ```bash
 export TF_VAR_redshift_admin_password="YourSecurePassword456!"
 make apply dev
 ```
 
-**Option 2 - tfvars file (excluded from Git):**
+**After `apply` completes**, Terraform stores the password in SSM Parameter Store at `/edp/dev/redshift/admin_password`. From that point on, all tools fetch it from SSM — no password file ever needs to exist.
+
+**Alternative — tfvars file (excluded from Git):**
 
 ```bash
 # In environments/dev/secret.tfvars (added to .gitignore)
@@ -206,6 +233,7 @@ terraform apply -var-file="secret.tfvars"
 | `workgroup_name` | dbt profile configuration, Airflow connections |
 | `workgroup_endpoint` | SQL clients, dbt, BI tools use this hostname to connect |
 | `redshift_security_group_id` | Available if another module needs to allow traffic to Redshift |
+| `ssm_redshift_password_path` | The SSM parameter path where the admin password is stored: `/edp/{env}/redshift/admin_password` |
 
 ---
 
@@ -251,6 +279,9 @@ After `terraform apply`, I check the following in the AWS console:
 - [ ] Subnets: two private subnets listed
 - [ ] IAM role: `edp-dev-redshift-role` is attached to the namespace
 - [ ] Encryption: KMS key is set
+
+**SSM (Systems Manager) console:**
+- [ ] Parameter `/edp/dev/redshift/admin_password` exists as a `SecureString`
 
 **Connection test:**
 - [ ] Run a test query in the Redshift query editor: `SELECT current_database();`

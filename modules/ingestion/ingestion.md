@@ -132,8 +132,8 @@ A parameter group is a collection of database configuration settings. AWS applie
 
 ```hcl
 resource "aws_db_parameter_group" "postgres" {
-  name   = "${var.name_prefix}-${var.environment}-postgres16"
-  family = "postgres16"
+  name   = "${var.name_prefix}-${var.environment}-${local.pg_family}"
+  family = local.pg_family
 
   parameter {
     name         = "rds.logical_replication"
@@ -148,6 +148,8 @@ resource "aws_db_parameter_group" "postgres" {
   }
 }
 ```
+
+**`local.pg_family`:** The parameter group family name (for example, `postgres16`) is derived automatically from `var.db_engine_version` using `split(".", "16.6")[0]`. This means if the engine version variable is updated to `17.2`, the parameter group family updates to `postgres17` without any extra changes.
 
 **`rds.logical_replication = 1`:** By default, PostgreSQL's WAL records just enough information to recover the database after a crash. This is called physical replication. For CDC, I need logical replication, which records the full before and after state of every row change so DMS can understand exactly what changed. Setting this to `1` switches PostgreSQL into logical replication mode.
 
@@ -176,7 +178,7 @@ RDS requires a subnet group before it can deploy. The subnet group tells RDS whi
 resource "aws_db_instance" "source" {
   identifier        = "${var.name_prefix}-${var.environment}-source-db"
   engine            = "postgres"
-  engine_version    = "16.3"
+  engine_version    = var.db_engine_version
   instance_class    = var.db_instance_class
   allocated_storage = var.db_allocated_storage
 
@@ -191,7 +193,7 @@ resource "aws_db_instance" "source" {
   storage_encrypted = true
   kms_key_id        = var.kms_key_arn
 
-  backup_retention_period = 7
+  backup_retention_period = var.backup_retention_period
   deletion_protection     = var.deletion_protection
   skip_final_snapshot     = !var.deletion_protection
 
@@ -203,7 +205,7 @@ In a real production setup, the source database would already exist (it would be
 
 **`storage_encrypted = true` and `kms_key_id`:** The physical disk that holds the database files is encrypted using the platform KMS key. If someone physically removed the storage from AWS's data centre, they would see only encrypted bytes.
 
-**`backup_retention_period = 7`:** AWS takes automated daily snapshots of the database and keeps the last 7 days. I can restore the database to any point within those 7 days if something goes wrong.
+**`backup_retention_period = var.backup_retention_period`:** AWS takes automated daily snapshots and keeps them for this many days. The default is 7 days. Production environments set this to 30 days for longer recovery windows.
 
 **`deletion_protection = var.deletion_protection`:** In production this is `true`, which means Terraform and the AWS console both refuse to delete the database. This protects real data from being accidentally wiped. In dev it is `false` so I can run `terraform destroy` without manually disabling deletion protection first.
 
@@ -232,8 +234,7 @@ This works the same way as the RDS subnet group. DMS needs to know which private
 resource "aws_dms_replication_instance" "this" {
   replication_instance_id    = "${var.name_prefix}-${var.environment}-dms-ri"
   replication_instance_class = var.dms_instance_class
-  engine_version             = "3.5.3"
-  allocated_storage          = 50
+  allocated_storage          = var.dms_allocated_storage
   publicly_accessible        = false
   multi_az                   = var.multi_az
   auto_minor_version_upgrade = true
@@ -273,25 +274,27 @@ An endpoint is DMS's connection configuration. The source endpoint tells DMS whe
 
 ### 9. DMS target endpoint (Bronze S3 bucket)
 
-```hcl
-resource "aws_dms_endpoint" "target_s3" {
-  endpoint_type = "target"
-  engine_name   = "s3"
+The AWS provider 5.x introduced a dedicated resource for S3 endpoints: `aws_dms_s3_endpoint`. In earlier provider versions this was configured using a nested `s3_settings` block inside `aws_dms_endpoint`, but that block was removed in provider 5. All S3 settings are now top-level attributes on `aws_dms_s3_endpoint`.
 
-  s3_settings {
-    bucket_name               = var.bronze_bucket_name
-    bucket_folder             = "raw"
-    service_access_role_arn   = var.dms_s3_role_arn
-    compression_type          = "GZIP"
-    data_format               = "parquet"
-    parquet_version           = "parquet-2-0"
-    date_partition_enabled    = true
-    date_partition_sequence   = "YYYYMMDD"
-    timestamp_column_name     = "_dms_timestamp"
-    include_op_for_full_load  = true
-    cdc_inserts_and_updates   = true
-    cdc_deletes_option        = "all-deletes"
-  }
+```hcl
+resource "aws_dms_s3_endpoint" "target_s3" {
+  endpoint_id             = "${var.name_prefix}-${var.environment}-bronze-s3-endpoint"
+  endpoint_type           = "target"
+  service_access_role_arn = var.dms_s3_role_arn
+
+  bucket_name                      = var.bronze_bucket_name
+  bucket_folder                    = "raw"
+  compression_type                 = "GZIP"
+  data_format                      = "parquet"
+  parquet_version                  = "parquet-2-0"
+  parquet_timestamp_in_millisecond = true
+  date_partition_enabled           = true
+  date_partition_sequence          = "YYYYMMDD"
+  timestamp_column_name            = "_dms_timestamp"
+  include_op_for_full_load         = true
+  cdc_inserts_and_updates          = true
+
+  tags = local.common_tags
 }
 ```
 
@@ -347,6 +350,34 @@ But for development I include everything so I can test with any table I create i
 
 ---
 
+### 11. SSM parameter for the RDS password
+
+```hcl
+resource "aws_ssm_parameter" "db_password" {
+  name        = "/edp/${var.environment}/rds/db_password"
+  description = "RDS PostgreSQL master password — ${var.environment}"
+  type        = "SecureString"
+  value       = var.db_password
+  key_id      = var.kms_key_arn
+  tags        = local.common_tags
+}
+```
+
+After Terraform applies, the RDS password is automatically stored in SSM (Systems Manager) Parameter Store at `/edp/{environment}/rds/db_password` as a `SecureString` encrypted with the platform KMS key. This means the password never needs to exist in a file anywhere. Any tool that needs it — the simulator, an Airflow DAG, a maintenance script — fetches it at runtime:
+
+```bash
+aws ssm get-parameter \
+  --name /edp/dev/rds/db_password \
+  --with-decryption \
+  --query Parameter.Value \
+  --output text \
+  --profile dev-admin
+```
+
+The simulator's Makefile does this automatically when `ENV=dev`, `ENV=staging`, or `ENV=prod` is passed.
+
+---
+
 ## Module inputs (variables)
 
 | Variable | Type | Default | Description |
@@ -358,12 +389,15 @@ But for development I include everything so I can test with any table I create i
 | `kms_key_arn` | string | required | KMS key ARN (Amazon Resource Name) from the `iam-metadata` module |
 | `bronze_bucket_name` | string | required | Bronze bucket name from the `data-lake` module |
 | `dms_s3_role_arn` | string | required | DMS S3 role ARN from the `iam-metadata` module |
-| `db_password` | string | required | RDS master password (never commit this to Git) |
+| `db_password` | string | required | RDS master password (stored in SSM after apply, never commit to Git) |
 | `db_name` | string | `appdb` | Name of the database inside the RDS instance |
 | `db_username` | string | `dbadmin` | RDS master username |
+| `db_engine_version` | string | `16.6` | PostgreSQL engine version. Controls both the engine and the parameter group family |
 | `db_instance_class` | string | `db.t3.micro` | RDS compute size (determines CPU and memory) |
 | `db_allocated_storage` | number | `20` | RDS disk size in gigabytes |
-| `dms_instance_class` | string | `dms.t3.micro` | DMS replication instance compute size |
+| `backup_retention_period` | number | `7` | Days to retain automated RDS backups. Dev: 7, staging: 14, prod: 30 |
+| `dms_instance_class` | string | `dms.t3.medium` | DMS replication instance compute size |
+| `dms_allocated_storage` | number | `50` | DMS replication instance disk size in gigabytes |
 | `multi_az` | bool | `false` | Enable Multi-AZ for RDS and DMS (recommended for production) |
 | `deletion_protection` | bool | `false` | Protect RDS from accidental deletion (set to `true` in production) |
 
@@ -371,18 +405,18 @@ But for development I include everything so I can test with any table I create i
 
 ## Sensitive variables
 
-The `db_password` variable has no default and must be provided every time Terraform runs. Never put passwords in a `.tf` file or commit them to a Git repository.
+`db_password` has no default and must be provided at apply time. Never put it in a `.tf` file or commit it to Git.
 
-**Option 1 - Environment variable (easiest):**
+**Recommended — environment variable:**
 
 ```bash
 export TF_VAR_db_password="YourSecurePassword123!"
 make apply dev
 ```
 
-Terraform automatically reads any environment variable that starts with `TF_VAR_` and maps it to the matching Terraform variable name.
+Terraform reads any `TF_VAR_*` environment variable and maps it to the matching variable name. **After `apply` completes**, Terraform stores the password in SSM Parameter Store at `/edp/dev/rds/db_password`. From that point on, all tools (simulator, Airflow, scripts) fetch it from SSM — no password file ever needs to exist.
 
-**Option 2 - tfvars file (kept out of Git):**
+**Alternative — tfvars file (excluded from Git):**
 
 ```bash
 # Create this file: environments/dev/secret.tfvars
@@ -407,6 +441,7 @@ terraform apply -var-file="secret.tfvars"
 | `dms_security_group_id` | The DMS security group ID |
 | `dms_replication_instance_arn` | The DMS replication instance ARN |
 | `dms_replication_task_arn` | The DMS task ARN (Amazon Resource Name). I pass this to the Airflow DAG so it can start and monitor the task |
+| `ssm_db_password_path` | The SSM parameter path where the RDS password is stored: `/edp/{env}/rds/db_password` |
 
 ---
 
@@ -460,10 +495,13 @@ After `terraform apply` and after starting the task, I verify the following in t
 
 **RDS (Relational Database Service) console:**
 - [ ] Instance `edp-dev-source-db` is in `available` state
-- [ ] Engine: PostgreSQL 16.3
+- [ ] Engine: PostgreSQL 16.6 (or the version set in `db_engine_version`)
 - [ ] Storage encrypted: Yes
-- [ ] Parameter group: `edp-dev-postgres16`
+- [ ] Parameter group: `edp-dev-postgres16` (family derived from engine version)
 - [ ] Multi-AZ: matches the variable setting
+
+**SSM (Systems Manager) console:**
+- [ ] Parameter `/edp/dev/rds/db_password` exists as a `SecureString`
 
 **DMS (Database Migration Service) console:**
 - [ ] Replication instance `edp-dev-dms-ri` is in `available` state
