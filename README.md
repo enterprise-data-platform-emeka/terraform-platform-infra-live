@@ -193,6 +193,56 @@ The task ARN is in the Terraform output after `make apply dev`.
 
 ---
 
+## Inspecting created resources in the AWS console
+
+After `make apply dev` completes, I can verify what Terraform built in two ways. Both require being logged in to the correct AWS account and being in the **eu-central-1 (Frankfurt)** region. The region selector is in the top-right corner of every AWS console page.
+
+---
+
+### Method 1: Tag Editor (fastest — everything in one view)
+
+Tag Editor searches across all AWS resource types and returns every resource that matches a given tag. Because Terraform tags every resource with `Project = EnterpriseDataPlatform`, a single search shows the full inventory without clicking through multiple service consoles.
+
+**Steps:**
+
+1. Open the AWS console and go to **Resource Groups and Tag Editor**. I can find it by typing "Tag Editor" in the top search bar.
+2. Click **Tag Editor** in the left sidebar.
+3. Set the search fields:
+   - **Regions:** `eu-central-1`
+   - **Resource types:** leave as "All resource types"
+   - **Tags:** Key = `Project`, Value = `EnterpriseDataPlatform`
+4. Click **Search resources**.
+
+Every resource Terraform created appears in the results list with its type, name, region, and ARN (Amazon Resource Name). I can sort by resource type to group related resources together.
+
+**When to use this method:** when I want to confirm everything was created and nothing is missing, or when I want a quick count of total resources before running `make destroy dev`.
+
+---
+
+### Method 2: Service by service (most detail)
+
+This method goes directly to each service's console for the richest view of each resource. It takes longer but shows configuration details, connection status, and metrics that Tag Editor does not.
+
+**Always check that the region is set to eu-central-1 before navigating to any service.**
+
+| Service | Console path | What to look for |
+|---|---|---|
+| VPC (Virtual Private Cloud) | VPC → Your VPCs | `edp-dev-vpc`, 3 subnets, S3 VPC Endpoint on private route table |
+| S3 (Simple Storage Service) | S3 → Buckets | 5 buckets with `edp-dev-` prefix, encryption and versioning enabled on each |
+| RDS (Relational Database Service) | RDS → Databases | `edp-dev-source-db` showing status `available` |
+| DMS (Database Migration Service) | DMS → Replication instances / Tasks | `edp-dev-dms-ri` showing `available`, `edp-dev-cdc-task` visible |
+| EC2 (Elastic Compute Cloud) | EC2 → Instances | `edp-dev-bastion` showing `running` |
+| KMS (Key Management Service) | KMS → Customer managed keys | Key with alias `alias/edp-dev-platform` |
+| IAM (Identity and Access Management) | IAM → Roles, filter by `edp` | All service roles for Glue, MWAA, Redshift, DMS |
+| Glue | Glue → Databases | `edp_dev_bronze`, `edp_dev_silver`, `edp_dev_gold` |
+| Athena | Athena → Workgroups | `edp-dev-workgroup` showing `ENABLED` |
+| Redshift Serverless | Redshift Serverless → Workgroups | `edp-dev-workgroup` and `edp-dev-namespace` |
+| SSM (Systems Manager) | Systems Manager → Parameter Store | `/edp/dev/rds/db_password` and `/edp/dev/redshift/admin_password` as `SecureString` |
+
+**When to use this method:** when verifying a specific resource in detail, troubleshooting a connection issue, or checking DMS task status and replication lag.
+
+---
+
 ## Full validation checklist
 
 After `make apply dev` completes successfully, verify the following in the AWS console:
