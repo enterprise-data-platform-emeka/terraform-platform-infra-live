@@ -5,7 +5,7 @@ variable "vpc_cidr"    { default = "10.10.0.0/16" }
 variable "name_prefix" { default = "edp" }
 
 # Ingestion variables — commented out after Phase 1 CDC run.
-# Uncomment when module "ingestion" is re-enabled.
+# Uncomment when module "ingestion" and bastion are re-enabled.
 #
 # variable "db_password" {
 #   description = "RDS master password. Provide via TF_VAR_db_password env var or secret.tfvars"

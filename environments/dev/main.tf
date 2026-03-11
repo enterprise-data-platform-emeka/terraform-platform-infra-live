@@ -7,7 +7,7 @@ module "networking" {
 module "data_lake" {
   source        = "../../modules/data-lake"
   environment   = var.environment
-  force_destroy = false # Bronze bucket has real data — keep false so terraform destroy can't wipe it
+  force_destroy = false
   name_prefix   = var.name_prefix
 }
 
@@ -21,8 +21,9 @@ module "iam_metadata" {
   quarantine_bucket_name = module.data_lake.quarantine_bucket_name
 }
 
-# Ingestion (RDS + DMS) — commented out after Phase 1 CDC run.
-# Bronze data is already in S3. Uncomment only if re-running the CDC simulator.
+# Ingestion (RDS + DMS) and bastion — commented out after Phase 1 CDC run.
+# Bronze data is already in S3. Uncomment only when re-running the CDC simulator.
+#
 # module "ingestion" {
 #   source              = "../../modules/ingestion"
 #   environment         = var.environment
@@ -63,6 +64,10 @@ module "serving" {
   redshift_admin_password = var.redshift_admin_password
 }
 
+# module "orchestration" — disabled until DAGs are written.
+# MWAA costs ~$0.49/hr even at mw1.small and requires a NAT Gateway (~$0.045/hr).
+# Uncomment when platform-orchestration-mwaa-airflow DAGs are ready to deploy.
+#
 # module "orchestration" {
 #   source             = "../../modules/orchestration"
 #   environment        = var.environment
@@ -75,8 +80,7 @@ module "serving" {
 # }
 
 # Bastion host — SSM tunnel to private RDS.
-# Commented out after Phase 1 CDC run. Bronze data is in S3.
-# Uncomment only when re-running the CDC simulator against a live RDS.
+# Commented out after Phase 1 CDC run. Uncomment when re-running the CDC simulator.
 #
 # Usage when uncommented (after apply):
 #   aws ssm start-session \
@@ -88,8 +92,14 @@ module "serving" {
 # data "aws_ami" "amazon_linux_2023" {
 #   most_recent = true
 #   owners      = ["amazon"]
-#   filter { name = "name";                values = ["al2023-ami-*-x86_64"] }
-#   filter { name = "virtualization-type"; values = ["hvm"] }
+#   filter {
+#     name   = "name"
+#     values = ["al2023-ami-*-x86_64"]
+#   }
+#   filter {
+#     name   = "virtualization-type"
+#     values = ["hvm"]
+#   }
 # }
 #
 # resource "aws_iam_role" "bastion_ssm" {
@@ -114,7 +124,12 @@ module "serving" {
 #   name        = "${var.name_prefix}-${var.environment}-bastion-sg"
 #   description = "Bastion for SSM tunnel to RDS, no inbound SSH required"
 #   vpc_id      = module.networking.vpc_id
-#   egress { from_port = 0; to_port = 0; protocol = "-1"; cidr_blocks = ["0.0.0.0/0"] }
+#   egress {
+#     from_port   = 0
+#     to_port     = 0
+#     protocol    = "-1"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
 # }
 #
 # resource "aws_instance" "bastion" {
@@ -129,6 +144,7 @@ module "serving" {
 #     dnf install -y amazon-ssm-agent
 #     systemctl enable amazon-ssm-agent
 #     systemctl start amazon-ssm-agent
+#     systemctl restart amazon-ssm-agent
 #     EOF
 #   depends_on = [aws_iam_role_policy_attachment.bastion_ssm, aws_iam_instance_profile.bastion]
 #   tags = { Name = "${var.name_prefix}-${var.environment}-bastion", Purpose = "SSM tunnel to RDS" }

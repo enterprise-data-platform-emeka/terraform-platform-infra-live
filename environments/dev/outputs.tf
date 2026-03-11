@@ -1,5 +1,5 @@
 # Ingestion and bastion outputs — commented out after Phase 1 CDC run.
-# Uncomment when module "ingestion" and bastion resources are re-enabled.
+# Uncomment when module "ingestion" and bastion are re-enabled.
 #
 # output "rds_endpoint" {
 #   description = "RDS PostgreSQL hostname for the SSM tunnel command"
