@@ -60,6 +60,7 @@ data "aws_iam_policy_document" "glue_data_access" {
       "arn:aws:s3:::${var.silver_bucket_name}", "arn:aws:s3:::${var.silver_bucket_name}/*",
       "arn:aws:s3:::${var.gold_bucket_name}", "arn:aws:s3:::${var.gold_bucket_name}/*",
       "arn:aws:s3:::${var.quarantine_bucket_name}", "arn:aws:s3:::${var.quarantine_bucket_name}/*",
+      "arn:aws:s3:::${var.glue_scripts_bucket_name}", "arn:aws:s3:::${var.glue_scripts_bucket_name}/*",
     ]
   }
 

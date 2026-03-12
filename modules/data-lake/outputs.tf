@@ -17,3 +17,7 @@ output "quarantine_bucket_name" {
 output "athena_results_bucket" {
   value = aws_s3_bucket.this["athena_results"].bucket
 }
+
+output "glue_scripts_bucket" {
+  value = aws_s3_bucket.this["glue_scripts"].bucket
+}

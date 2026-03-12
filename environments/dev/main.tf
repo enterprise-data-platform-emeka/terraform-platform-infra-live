@@ -12,13 +12,14 @@ module "data_lake" {
 }
 
 module "iam_metadata" {
-  source                 = "../../modules/iam-metadata"
-  environment            = var.environment
-  name_prefix            = var.name_prefix
-  bronze_bucket_name     = module.data_lake.bronze_bucket_name
-  silver_bucket_name     = module.data_lake.silver_bucket_name
-  gold_bucket_name       = module.data_lake.gold_bucket_name
-  quarantine_bucket_name = module.data_lake.quarantine_bucket_name
+  source                   = "../../modules/iam-metadata"
+  environment              = var.environment
+  name_prefix              = var.name_prefix
+  bronze_bucket_name       = module.data_lake.bronze_bucket_name
+  silver_bucket_name       = module.data_lake.silver_bucket_name
+  gold_bucket_name         = module.data_lake.gold_bucket_name
+  quarantine_bucket_name   = module.data_lake.quarantine_bucket_name
+  glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket
 }
 
 # Ingestion (RDS + DMS) and bastion — commented out after Phase 1 CDC run.
@@ -52,17 +53,21 @@ module "processing" {
   athena_results_bucket = module.data_lake.athena_results_bucket
 }
 
-module "serving" {
-  source                  = "../../modules/serving"
-  environment             = var.environment
-  name_prefix             = var.name_prefix
-  vpc_id                  = module.networking.vpc_id
-  vpc_cidr                = var.vpc_cidr
-  private_subnet_ids      = module.networking.private_subnet_ids
-  kms_key_arn             = module.iam_metadata.kms_key_arn
-  redshift_role_arn       = module.iam_metadata.redshift_role_arn
-  redshift_admin_password = var.redshift_admin_password
-}
+# module "serving" — disabled until Gold data exists.
+# Redshift Serverless has a base RPU charge even when idle.
+# Uncomment when platform-dbt-analytics Gold models are ready to load.
+#
+# module "serving" {
+#   source                  = "../../modules/serving"
+#   environment             = var.environment
+#   name_prefix             = var.name_prefix
+#   vpc_id                  = module.networking.vpc_id
+#   vpc_cidr                = var.vpc_cidr
+#   private_subnet_ids      = module.networking.private_subnet_ids
+#   kms_key_arn             = module.iam_metadata.kms_key_arn
+#   redshift_role_arn       = module.iam_metadata.redshift_role_arn
+#   redshift_admin_password = var.redshift_admin_password
+# }
 
 # module "orchestration" — disabled until DAGs are written.
 # MWAA costs ~$0.49/hr even at mw1.small and requires a NAT Gateway (~$0.045/hr).

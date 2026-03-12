@@ -7,6 +7,7 @@ locals {
     gold           = "${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-gold"
     quarantine     = "${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-quarantine"
     athena_results = "${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-athena-results"
+    glue_scripts   = "${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-glue-scripts"
   }
 }
 

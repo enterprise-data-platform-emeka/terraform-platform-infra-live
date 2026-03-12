@@ -27,3 +27,8 @@ variable "quarantine_bucket_name" {
   description = "Name of the Quarantine S3 bucket"
   type        = string
 }
+
+variable "glue_scripts_bucket_name" {
+  description = "Name of the Glue scripts S3 bucket"
+  type        = string
+}
