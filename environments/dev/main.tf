@@ -20,6 +20,10 @@ module "iam_metadata" {
   gold_bucket_name         = module.data_lake.gold_bucket_name
   quarantine_bucket_name   = module.data_lake.quarantine_bucket_name
   glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket
+
+  github_org                  = var.github_org
+  github_repos                = ["terraform-platform-infra-live", "platform-glue-jobs", "platform-dbt-analytics"]
+  create_github_oidc_provider = true
 }
 
 # Ingestion (RDS + DMS) and bastion — commented out after Phase 1 CDC run.

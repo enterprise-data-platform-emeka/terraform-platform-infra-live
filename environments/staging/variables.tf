@@ -4,6 +4,11 @@ variable "profile"     { default = "staging-admin" }
 variable "vpc_cidr"    { default = "10.20.0.0/16" }
 variable "name_prefix" { default = "edp" }
 
+variable "github_org" {
+  description = "GitHub organisation or username that owns the repositories. Set via TF_VAR_github_org or a secret.tfvars file."
+  type        = string
+}
+
 # ── Ingestion ────────────────────────────────────────────────────────────────
 
 variable "db_password" {

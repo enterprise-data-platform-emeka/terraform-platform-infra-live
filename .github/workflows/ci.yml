@@ -1,0 +1,43 @@
+name: CI
+
+# Validates Terraform formatting and configuration on every pull request.
+# No AWS credentials required — backend is skipped with -backend=false.
+# The deploy workflow handles plan + apply against real environments.
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, staging, prod]
+
+    defaults:
+      run:
+        working-directory: environments/${{ matrix.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      - name: terraform fmt check
+        run: terraform fmt -check -recursive
+
+      # -backend=false skips S3 backend initialisation. Validate only checks
+      # HCL syntax and provider schema — no AWS calls needed.
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate

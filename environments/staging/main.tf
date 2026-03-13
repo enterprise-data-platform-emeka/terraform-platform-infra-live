@@ -20,6 +20,12 @@ module "iam_metadata" {
   gold_bucket_name         = module.data_lake.gold_bucket_name
   quarantine_bucket_name   = module.data_lake.quarantine_bucket_name
   glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket
+
+  github_org                  = var.github_org
+  github_repos                = ["terraform-platform-infra-live", "platform-glue-jobs", "platform-dbt-analytics"]
+  # If staging shares the same AWS account as dev, set this to false to avoid
+  # a duplicate OIDC provider error. If staging is a separate account, keep true.
+  create_github_oidc_provider = true
 }
 
 module "ingestion" {
