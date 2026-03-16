@@ -65,47 +65,39 @@ resource "aws_vpc_endpoint" "s3" {
   route_table_ids   = [aws_route_table.private.id, aws_route_table.public.id]
 }
 
-# SSM Interface Endpoints let EC2 instances register with Systems Manager
-# without needing an internet route. Three endpoints are required:
-#   ssm          - control plane and registration
-#   ssmmessages  - WebSocket channel for Session Manager sessions
-#   ec2messages  - Run Command and system messages
-# private_dns_enabled = true means standard AWS hostnames resolve to private
-# IPs inside the VPC, so no code changes are needed on the instances.
-resource "aws_security_group" "vpc_endpoints" {
-  name        = "${var.name_prefix}-${var.environment}-vpc-endpoints-sg"
-  description = "Allow HTTPS from within the VPC to reach Interface Endpoints"
-  vpc_id      = aws_vpc.this.id
-
-  ingress {
-    description = "HTTPS from VPC for Interface Endpoints"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-locals {
-  ssm_endpoint_services = toset(["ssm", "ssmmessages", "ec2messages"])
-}
-
-resource "aws_vpc_endpoint" "ssm" {
-  for_each = local.ssm_endpoint_services
-
-  vpc_id              = aws_vpc.this.id
-  service_name        = "com.amazonaws.${data.aws_region.current.name}.${each.key}"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
-  private_dns_enabled = true
-
-  tags = { Name = "${var.name_prefix}-${var.environment}-${each.key}-endpoint" }
-}
+# SSM Interface Endpoints are only needed when the bastion EC2 is active.
+# Uncomment this block alongside the bastion in environments/dev/main.tf.
+#
+# resource "aws_security_group" "vpc_endpoints" {
+#   name        = "${var.name_prefix}-${var.environment}-vpc-endpoints-sg"
+#   description = "Allow HTTPS from within the VPC to reach Interface Endpoints"
+#   vpc_id      = aws_vpc.this.id
+#   ingress {
+#     description = "HTTPS from VPC for Interface Endpoints"
+#     from_port   = 443
+#     to_port     = 443
+#     protocol    = "tcp"
+#     cidr_blocks = [var.vpc_cidr]
+#   }
+#   egress {
+#     from_port   = 0
+#     to_port     = 0
+#     protocol    = "-1"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+# }
+#
+# locals {
+#   ssm_endpoint_services = toset(["ssm", "ssmmessages", "ec2messages"])
+# }
+#
+# resource "aws_vpc_endpoint" "ssm" {
+#   for_each            = local.ssm_endpoint_services
+#   vpc_id              = aws_vpc.this.id
+#   service_name        = "com.amazonaws.${data.aws_region.current.name}.${each.key}"
+#   vpc_endpoint_type   = "Interface"
+#   subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+#   security_group_ids  = [aws_security_group.vpc_endpoints.id]
+#   private_dns_enabled = true
+#   tags = { Name = "${var.name_prefix}-${var.environment}-${each.key}-endpoint" }
+# }
