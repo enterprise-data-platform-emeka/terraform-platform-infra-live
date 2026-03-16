@@ -62,8 +62,9 @@ resource "aws_glue_connection" "vpc" {
 
 # Athena workgroup enforces result location and KMS encryption on every query.
 resource "aws_athena_workgroup" "this" {
-  name  = "${var.name_prefix}-${var.environment}-workgroup"
-  state = "ENABLED"
+  name          = "${var.name_prefix}-${var.environment}-workgroup"
+  state         = "ENABLED"
+  force_destroy = true
 
   configuration {
     enforce_workgroup_configuration    = true
