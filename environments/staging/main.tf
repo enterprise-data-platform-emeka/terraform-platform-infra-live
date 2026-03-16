@@ -19,7 +19,7 @@ module "iam_metadata" {
   silver_bucket_name       = module.data_lake.silver_bucket_name
   gold_bucket_name         = module.data_lake.gold_bucket_name
   quarantine_bucket_name   = module.data_lake.quarantine_bucket_name
-  glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket
+  glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket_name
 
   github_org                  = var.github_org
   github_repos                = ["terraform-platform-infra-live", "platform-glue-jobs", "platform-dbt-analytics"]

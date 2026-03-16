@@ -18,6 +18,6 @@ output "athena_results_bucket" {
   value = aws_s3_bucket.this["athena_results"].bucket
 }
 
-output "glue_scripts_bucket" {
+output "glue_scripts_bucket_name" {
   value = aws_s3_bucket.this["glue_scripts"].bucket
 }
