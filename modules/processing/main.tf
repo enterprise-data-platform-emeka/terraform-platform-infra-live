@@ -60,6 +60,32 @@ resource "aws_glue_connection" "vpc" {
   }
 }
 
+# Glue Crawler scans the Silver S3 bucket after each pipeline run and registers
+# table schemas in the Glue Data Catalog (edp_{env}_silver database). Without
+# this, dbt cannot query Silver tables via Athena because the catalog has no
+# knowledge of the Parquet files the Glue PySpark jobs wrote.
+#
+# The crawler is triggered by the Airflow DAG after all Silver jobs complete.
+# It runs on demand only — no schedule set here.
+resource "aws_glue_crawler" "silver" {
+  name          = "${var.name_prefix}-${var.environment}-silver-crawler"
+  role          = "${var.name_prefix}-${var.environment}-glue-role"
+  database_name = "${var.name_prefix}_${var.environment}_silver"
+
+  s3_target {
+    path = "s3://${var.silver_bucket_name}/"
+  }
+
+  # Overwrite existing table definitions on each run so schema changes are
+  # picked up automatically when a Glue PySpark job adds or renames a column.
+  schema_change_policy {
+    delete_behavior = "LOG"
+    update_behavior = "UPDATE_IN_DATABASE"
+  }
+
+  tags = { Name = "${var.name_prefix}-${var.environment}-silver-crawler" }
+}
+
 # Athena workgroup enforces result location and KMS encryption on every query.
 resource "aws_athena_workgroup" "this" {
   name          = "${var.name_prefix}-${var.environment}-workgroup"

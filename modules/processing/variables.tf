@@ -27,3 +27,8 @@ variable "athena_results_bucket" {
   description = "Athena results bucket name from the data-lake module"
   type        = string
 }
+
+variable "silver_bucket_name" {
+  description = "Silver S3 bucket name from the data-lake module. The Glue Crawler scans this bucket to register table schemas in the Glue Data Catalog."
+  type        = string
+}

@@ -54,6 +54,7 @@ module "processing" {
   private_subnet_ids    = module.networking.private_subnet_ids
   kms_key_arn           = module.iam_metadata.kms_key_arn
   athena_results_bucket = module.data_lake.athena_results_bucket
+  silver_bucket_name    = module.data_lake.silver_bucket_name
 }
 
 module "serving" {
