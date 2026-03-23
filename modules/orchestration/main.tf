@@ -98,7 +98,7 @@ resource "aws_mwaa_environment" "this" {
   name              = "${var.name_prefix}-${var.environment}-mwaa"
   airflow_version        = var.airflow_version
   environment_class      = var.mwaa_environment_class
-  webserver_access_mode  = "PUBLIC_NETWORK"
+  webserver_access_mode  = "PUBLIC_ONLY"
 
   dag_s3_path          = "dags/"
   requirements_s3_path = aws_s3_object.requirements.key
