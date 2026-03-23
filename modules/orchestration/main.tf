@@ -100,9 +100,11 @@ resource "aws_mwaa_environment" "this" {
   environment_class      = var.mwaa_environment_class
   webserver_access_mode  = "PUBLIC_ONLY"
 
-  dag_s3_path          = "dags/"
-  requirements_s3_path = aws_s3_object.requirements.key
-  plugins_s3_path      = aws_s3_object.plugins.key
+  dag_s3_path                  = "dags/"
+  requirements_s3_path         = aws_s3_object.requirements.key
+  requirements_s3_object_version = aws_s3_object.requirements.version_id
+  plugins_s3_path              = aws_s3_object.plugins.key
+  plugins_s3_object_version    = aws_s3_object.plugins.version_id
   source_bucket_arn    = aws_s3_bucket.dags.arn
   execution_role_arn   = var.mwaa_role_arn
   # kms_key is intentionally omitted. MWAA uses service-managed encryption for
