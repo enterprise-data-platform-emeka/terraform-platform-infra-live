@@ -20,8 +20,13 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "dags" {
   bucket = aws_s3_bucket.dags.id
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm     = "aws:kms"
-      kms_master_key_id = var.kms_key_arn
+      # AES256 (SSE-S3) is used here instead of customer-managed KMS because
+      # MWAA requires the bucket encryption key to match the environment's
+      # kms_key setting. Since MWAA uses service-managed encryption (no
+      # kms_key specified), the bucket must also use service-managed
+      # encryption. The bucket holds DAG code and requirements.txt — not
+      # sensitive pipeline data — so SSE-S3 is appropriate.
+      sse_algorithm = "AES256"
     }
   }
 }
