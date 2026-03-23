@@ -96,8 +96,9 @@ resource "aws_s3_object" "plugins" {
 # MWAA environment. Note: first apply takes 20-30 minutes for AWS to provision Airflow.
 resource "aws_mwaa_environment" "this" {
   name              = "${var.name_prefix}-${var.environment}-mwaa"
-  airflow_version   = var.airflow_version
-  environment_class = var.mwaa_environment_class
+  airflow_version        = var.airflow_version
+  environment_class      = var.mwaa_environment_class
+  webserver_access_mode  = "PUBLIC_NETWORK"
 
   dag_s3_path          = "dags/"
   requirements_s3_path = aws_s3_object.requirements.key
