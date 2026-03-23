@@ -83,6 +83,7 @@ module "orchestration" {
   private_subnet_ids = module.networking.private_subnet_ids
   kms_key_arn        = module.iam_metadata.kms_key_arn
   mwaa_role_arn      = module.iam_metadata.mwaa_role_arn
+  nat_gateway_id     = module.networking.nat_gateway_id
   force_destroy      = true
 
   # Terraform uploads these files to the DAGs bucket before creating the MWAA

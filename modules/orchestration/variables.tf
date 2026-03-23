@@ -46,6 +46,12 @@ variable "log_retention_days" {
   default     = 30
 }
 
+variable "nat_gateway_id" {
+  description = "NAT Gateway ID from the networking module. Passed so the MWAA environment depends on NAT routing being fully ready before creation starts."
+  type        = string
+  default     = ""
+}
+
 variable "force_destroy" {
   description = "If true, allows the DAGs S3 bucket to be deleted even when it contains files. Set to true for dev, false for staging and prod."
   type        = bool

@@ -94,12 +94,16 @@ resource "aws_mwaa_environment" "this" {
   airflow_version   = var.airflow_version
   environment_class = var.mwaa_environment_class
 
-  dag_s3_path             = "dags/"
-  requirements_s3_path    = aws_s3_object.requirements.key
-  plugins_s3_path         = aws_s3_object.plugins.key
-  source_bucket_arn       = aws_s3_bucket.dags.arn
-  execution_role_arn      = var.mwaa_role_arn
-  kms_key                 = var.kms_key_arn
+  dag_s3_path          = "dags/"
+  requirements_s3_path = aws_s3_object.requirements.key
+  plugins_s3_path      = aws_s3_object.plugins.key
+  source_bucket_arn    = aws_s3_bucket.dags.arn
+  execution_role_arn   = var.mwaa_role_arn
+  # kms_key is intentionally omitted. MWAA uses service-managed encryption for
+  # its internal SQS queues and metadata. Customer-managed KMS requires the key
+  # policy to explicitly grant access to sqs.amazonaws.com and logs.amazonaws.com
+  # service principals, which the platform KMS key does not do. The actual pipeline
+  # data (S3 Bronze/Silver/Gold) still uses customer-managed KMS.
 
   network_configuration {
     security_group_ids = [aws_security_group.mwaa.id]
@@ -132,6 +136,14 @@ resource "aws_mwaa_environment" "this" {
   airflow_configuration_options = {
     "core.load_examples"              = "false"
     "core.dag_file_processor_timeout" = "120"
+  }
+
+  # Referencing nat_gateway_id in a tag creates an implicit Terraform dependency
+  # so MWAA environment creation waits for the NAT Gateway to be fully routing.
+  # Without this, workers cannot reach PyPI during startup and the environment
+  # fails with INCORRECT_CONFIGURATION.
+  tags = {
+    nat_gateway = var.nat_gateway_id != "" ? var.nat_gateway_id : "none"
   }
 
   depends_on = [

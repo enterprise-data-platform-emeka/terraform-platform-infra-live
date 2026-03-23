@@ -117,6 +117,13 @@ data "aws_iam_policy_document" "mwaa_execution" {
   }
 
   statement {
+    sid       = "AirflowPublishMetrics"
+    effect    = "Allow"
+    actions   = ["airflow:PublishMetrics"]
+    resources = ["arn:aws:airflow:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:environment/${var.name_prefix}-${var.environment}-mwaa"]
+  }
+
+  statement {
     sid    = "AirflowLogging"
     effect = "Allow"
     actions = [
@@ -125,7 +132,11 @@ data "aws_iam_policy_document" "mwaa_execution" {
       "logs:ListLogDeliveries", "logs:DescribeLogGroups",
     ]
     resources = [
+      # MWAA creates log groups named airflow-{env-name}-{component}.
+      # The wildcard covers both our pre-created /aws/mwaa/ groups and the
+      # airflow-edp-dev-mwaa-* groups MWAA creates internally.
       "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:airflow-${var.name_prefix}-${var.environment}-*",
+      "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/mwaa/${var.name_prefix}-${var.environment}/*",
     ]
   }
 
