@@ -43,8 +43,32 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+# NAT Gateway allows private subnets to reach the internet (required for MWAA
+# to download PyPI packages during environment creation). Only created when
+# create_nat_gateway = true to avoid unnecessary cost when MWAA is not active.
+resource "aws_eip" "nat" {
+  count  = var.create_nat_gateway ? 1 : 0
+  domain = "vpc"
+}
+
+resource "aws_nat_gateway" "this" {
+  count         = var.create_nat_gateway ? 1 : 0
+  allocation_id = aws_eip.nat[0].id
+  subnet_id     = aws_subnet.public.id
+  depends_on    = [aws_internet_gateway.this]
+  tags          = { Name = "${var.name_prefix}-${var.environment}-nat" }
+}
+
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.this.id
+
+  dynamic "route" {
+    for_each = var.create_nat_gateway ? [1] : []
+    content {
+      cidr_block     = "0.0.0.0/0"
+      nat_gateway_id = aws_nat_gateway.this[0].id
+    }
+  }
 }
 
 resource "aws_route_table_association" "private_a" {

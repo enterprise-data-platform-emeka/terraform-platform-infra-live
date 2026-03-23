@@ -13,3 +13,9 @@ variable "vpc_cidr" {
   description = "CIDR block for VPC"
   type        = string
 }
+
+variable "create_nat_gateway" {
+  description = "Whether to create a NAT Gateway so private subnets can reach the internet. Required for MWAA (to download PyPI packages). Costs ~$0.045/hr — only enable when MWAA is active."
+  type        = bool
+  default     = false
+}

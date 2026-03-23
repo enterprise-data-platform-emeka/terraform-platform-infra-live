@@ -1,7 +1,8 @@
 module "networking" {
-  source      = "../../modules/networking"
-  environment = var.environment
-  vpc_cidr    = var.vpc_cidr
+  source             = "../../modules/networking"
+  environment        = var.environment
+  vpc_cidr           = var.vpc_cidr
+  create_nat_gateway = true
 }
 
 module "data_lake" {
@@ -74,20 +75,22 @@ module "processing" {
 #   redshift_admin_password = var.redshift_admin_password
 # }
 
-# module "orchestration" — disabled until DAGs are written.
-# MWAA costs ~$0.49/hr even at mw1.small and requires a NAT Gateway (~$0.045/hr).
-# Uncomment when platform-orchestration-mwaa-airflow DAGs are ready to deploy.
-#
-# module "orchestration" {
-#   source             = "../../modules/orchestration"
-#   environment        = var.environment
-#   name_prefix        = var.name_prefix
-#   vpc_id             = module.networking.vpc_id
-#   private_subnet_ids = module.networking.private_subnet_ids
-#   kms_key_arn        = module.iam_metadata.kms_key_arn
-#   mwaa_role_arn      = module.iam_metadata.mwaa_role_arn
-#   force_destroy      = true
-# }
+module "orchestration" {
+  source             = "../../modules/orchestration"
+  environment        = var.environment
+  name_prefix        = var.name_prefix
+  vpc_id             = module.networking.vpc_id
+  private_subnet_ids = module.networking.private_subnet_ids
+  kms_key_arn        = module.iam_metadata.kms_key_arn
+  mwaa_role_arn      = module.iam_metadata.mwaa_role_arn
+  force_destroy      = true
+
+  # Terraform uploads these files to the DAGs bucket before creating the MWAA
+  # environment. Run 'make package' in platform-orchestration-mwaa-airflow first
+  # to build plugins.zip, then run 'make apply dev' here.
+  requirements_txt_local_path = abspath("${path.root}/../../../platform-orchestration-mwaa-airflow/requirements.txt")
+  plugins_zip_local_path      = abspath("${path.root}/../../../platform-orchestration-mwaa-airflow/plugins.zip")
+}
 
 # Bastion host — SSM tunnel to private RDS.
 # Commented out after Phase 1 CDC run. Uncomment when re-running the CDC simulator.

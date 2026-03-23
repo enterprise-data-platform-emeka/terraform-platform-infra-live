@@ -70,16 +70,36 @@ resource "aws_security_group" "mwaa" {
   tags = { Name = "${var.name_prefix}-${var.environment}-mwaa-sg" }
 }
 
+# Upload requirements.txt and plugins.zip to the DAGs bucket before MWAA is created.
+# MWAA reads requirements.txt on startup to install Python packages (dbt, providers, etc.).
+# plugins.zip is extracted to /usr/local/airflow/plugins/ on every worker — the dbt
+# project lives here so the BashOperator can find it at a known path.
+resource "aws_s3_object" "requirements" {
+  bucket = aws_s3_bucket.dags.id
+  key    = "requirements.txt"
+  source = var.requirements_txt_local_path
+  etag   = filemd5(var.requirements_txt_local_path)
+}
+
+resource "aws_s3_object" "plugins" {
+  bucket = aws_s3_bucket.dags.id
+  key    = "plugins.zip"
+  source = var.plugins_zip_local_path
+  etag   = filemd5(var.plugins_zip_local_path)
+}
+
 # MWAA environment. Note: first apply takes 20-30 minutes for AWS to provision Airflow.
 resource "aws_mwaa_environment" "this" {
   name              = "${var.name_prefix}-${var.environment}-mwaa"
   airflow_version   = var.airflow_version
   environment_class = var.mwaa_environment_class
 
-  dag_s3_path        = "dags/"
-  source_bucket_arn  = aws_s3_bucket.dags.arn
-  execution_role_arn = var.mwaa_role_arn
-  kms_key            = var.kms_key_arn
+  dag_s3_path             = "dags/"
+  requirements_s3_path    = aws_s3_object.requirements.key
+  plugins_s3_path         = aws_s3_object.plugins.key
+  source_bucket_arn       = aws_s3_bucket.dags.arn
+  execution_role_arn      = var.mwaa_role_arn
+  kms_key                 = var.kms_key_arn
 
   network_configuration {
     security_group_ids = [aws_security_group.mwaa.id]
@@ -117,5 +137,7 @@ resource "aws_mwaa_environment" "this" {
   depends_on = [
     aws_s3_bucket_versioning.dags,
     aws_cloudwatch_log_group.mwaa,
+    aws_s3_object.requirements,
+    aws_s3_object.plugins,
   ]
 }
