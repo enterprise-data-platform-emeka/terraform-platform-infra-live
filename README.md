@@ -1,5 +1,9 @@
 # terraform-platform-infra-live
 
+This repository is part of the [Enterprise Data Platform](https://github.com/enterprise-data-platform-emeka/platform-docs). For the full project overview, architecture diagram, and build order, start there.
+
+---
+
 This repository contains all the AWS (Amazon Web Services) infrastructure for the Enterprise Data Platform, written as Terraform code. If the `terraform-bootstrap` repository creates the filing cabinet (remote state storage), this repository builds everything inside it: the private network, the data storage buckets, the encryption keys, the permissions, the databases, the data processing environment, the data warehouse, and the pipeline orchestration system.
 
 Every AWS resource this platform needs is defined here. Nothing is created manually in the AWS console.
