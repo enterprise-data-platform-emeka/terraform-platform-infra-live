@@ -23,7 +23,7 @@ module "iam_metadata" {
   glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket_name
 
   github_org                  = var.github_org
-  github_repos                = ["terraform-platform-infra-live", "platform-glue-jobs", "platform-dbt-analytics"]
+  github_repos                = ["terraform-platform-infra-live", "platform-glue-jobs", "platform-dbt-analytics", "platform-orchestration-mwaa-airflow", "platform-cdc-simulator"]
   create_github_oidc_provider = true
 }
 
