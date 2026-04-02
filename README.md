@@ -247,6 +247,16 @@ This method goes directly to each service's console for the richest view of each
 
 ---
 
+## Infrastructure screenshots
+
+After `make apply dev` completes, the created resources are visible in the AWS console.
+
+![VPC vpc-04 with 3 subnets, 3 route tables, and 3 network connections in eu-central-1](images/VPC-Subnets-RoutTable.png)
+
+![All EDP S3 buckets in eu-central-1: bronze, silver, gold, quarantine, athena-results, glue-scripts, and mwaa-dags](images/AWS-S3-Buckets.png)
+
+---
+
 ## Full validation checklist
 
 After `make apply dev` completes successfully, verify the following in the AWS console:
