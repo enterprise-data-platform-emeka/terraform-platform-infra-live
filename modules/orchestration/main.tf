@@ -144,6 +144,12 @@ resource "aws_mwaa_environment" "this" {
   airflow_configuration_options = {
     "core.load_examples"              = "false"
     "core.dag_file_processor_timeout" = "120"
+    # The default celery.operation_timeout is 1 second. On MWAA, the first
+    # apply_async call to SQS can exceed 1 second (cold TCP connection, DNS
+    # resolution). When it does, all dispatched tasks fail immediately with
+    # "Was the task killed externally?" at queued state. 15 seconds gives SQS
+    # enough headroom for cold-start latency without masking real hangs.
+    "celery.operation_timeout"        = "15"
   }
 
   # Referencing nat_gateway_id in a tag creates an implicit Terraform dependency

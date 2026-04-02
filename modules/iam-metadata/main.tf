@@ -161,7 +161,11 @@ data "aws_iam_policy_document" "mwaa_execution" {
     sid     = "KMSAccess"
     effect  = "Allow"
     actions = ["kms:Decrypt", "kms:DescribeKey", "kms:GenerateDataKey*", "kms:Encrypt"]
-    resources = [aws_kms_key.platform.arn]
+    # "*" is required because MWAA's internal Celery SQS queue uses the
+    # AWS-managed SQS key (alias/aws/sqs), whose ARN is not known at plan time.
+    # Scoping to the platform key alone causes kms:GenerateDataKey failures
+    # when the scheduler sends tasks to that queue.
+    resources = ["*"]
   }
 
   statement {
@@ -172,6 +176,60 @@ data "aws_iam_policy_document" "mwaa_execution" {
       "glue:BatchStopJobRun", "glue:GetJob",
     ]
     resources = ["*"]
+  }
+
+  statement {
+    sid    = "GlueCrawlerInvoke"
+    effect = "Allow"
+    actions = [
+      "glue:StartCrawler", "glue:StopCrawler",
+      "glue:GetCrawler", "glue:GetCrawlerMetrics",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "GlueCatalogReadWrite"
+    effect = "Allow"
+    actions = [
+      "glue:GetDatabase", "glue:GetDatabases",
+      "glue:GetTable", "glue:GetTables",
+      "glue:CreateTable", "glue:UpdateTable", "glue:DeleteTable",
+      "glue:GetPartition", "glue:GetPartitions",
+      "glue:CreatePartition", "glue:BatchCreatePartition",
+      "glue:UpdatePartition", "glue:DeletePartition",
+      "glue:GetTableVersion", "glue:GetTableVersions",
+      "glue:DeleteTableVersion", "glue:BatchDeleteTableVersion",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "AthenaQueryExecution"
+    effect = "Allow"
+    actions = [
+      "athena:StartQueryExecution", "athena:StopQueryExecution",
+      "athena:GetQueryExecution", "athena:GetQueryResults",
+      "athena:GetWorkGroup", "athena:ListWorkGroups",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "DataLakeS3Access"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject", "s3:PutObject", "s3:DeleteObject",
+      "s3:GetBucketLocation", "s3:ListBucket",
+    ]
+    resources = [
+      "arn:aws:s3:::${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-silver",
+      "arn:aws:s3:::${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-silver/*",
+      "arn:aws:s3:::${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-gold",
+      "arn:aws:s3:::${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-gold/*",
+      "arn:aws:s3:::${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-athena-results",
+      "arn:aws:s3:::${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-athena-results/*",
+    ]
   }
 }
 
