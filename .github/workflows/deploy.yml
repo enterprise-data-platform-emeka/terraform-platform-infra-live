@@ -26,6 +26,9 @@ name: Deploy
 on:
   push:
     branches: [main]
+    paths:
+      - 'environments/**'
+      - 'modules/**'
 
   workflow_dispatch:
     inputs:

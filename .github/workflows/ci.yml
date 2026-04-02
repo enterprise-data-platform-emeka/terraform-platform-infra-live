@@ -19,6 +19,10 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'environments/**'
+      - 'modules/**'
+      - '.github/workflows/**'
 
 jobs:
   # --------------------------------------------------------------------------

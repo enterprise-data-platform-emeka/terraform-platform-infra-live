@@ -314,6 +314,38 @@ I keep dev running when I am actively building. I destroy it between sessions to
 
 ---
 
+## CI/CD
+
+CI and deploy only trigger when Terraform source files change (`environments/**` or `modules/**`). README updates, Makefile changes, and module documentation never trigger a workflow run.
+
+### On every pull request to main
+
+Three jobs run in order:
+
+**Validate (parallel across all three environments):**
+
+Runs `terraform fmt -check` and `terraform validate` against dev, staging, and prod simultaneously using `-backend=false` (no AWS credentials needed). This catches HCL syntax errors and schema problems before any AWS calls happen.
+
+**Security scan:**
+
+tfsec scans all Terraform modules for HIGH and CRITICAL severity findings. MEDIUM and LOW findings are reviewed and suppressed with inline `tfsec:ignore` annotations where the pattern is intentional.
+
+**Plan (after validate and security pass):**
+
+Runs `terraform plan` against the dev environment using OIDC (OpenID Connect) authentication. The plan output is posted as a comment on the pull request so reviewers see exactly what will change before approving the merge. The comment is updated on each new push to the PR so it always shows the latest plan.
+
+### On merge to main
+
+The deploy workflow triggers automatically and runs `terraform plan` then `terraform apply` against dev. The plan output is written to the GitHub Actions job summary for audit trail. Authentication uses OIDC, no long-lived AWS credentials are stored anywhere.
+
+Before the plan runs, `requirements.txt` and `plugins.zip` are downloaded from the MWAA S3 (Simple Storage Service) bucket. The orchestration module calls `filemd5()` on these files at plan time. Downloading them from S3 ensures the MD5 hash matches what is already in Terraform state, so Terraform sees no change to the MWAA environment and does not trigger a 35-minute MWAA environment update on every infrastructure deploy.
+
+### Promotion to staging and prod
+
+Trigger the Deploy workflow manually from GitHub Actions and choose the target environment. GitHub Environment protection rules require reviewer approval for staging and prod before the job runs.
+
+---
+
 ## Module READMEs
 
 Each module has its own documentation file with detailed explanations of every resource it creates:
