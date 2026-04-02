@@ -1,14 +1,31 @@
 name: CI
 
-# Validates Terraform formatting and configuration on every pull request.
-# No AWS credentials required — backend is skipped with -backend=false.
-# The deploy workflow handles plan + apply against real environments.
+# Validates Terraform on every pull request to main.
+#
+# Jobs (run in order):
+#   validate - terraform fmt + validate across all three environments (no AWS needed)
+#   security - tfsec security scan, HIGH and CRITICAL severity findings block the PR
+#   plan     - terraform plan against dev, output posted as a PR comment so reviewers
+#              see exactly what will change before approving the merge
+#
+# The validate and security jobs need no AWS credentials.
+# The plan job authenticates to dev via OIDC after validate and security pass.
+#
+# Required GitHub configuration:
+#   Environment: dev (Settings -> Environments)
+#     Variables: AWS_ACCOUNT_ID
+#     Secrets:   TF_VAR_DB_PASSWORD, TF_VAR_REDSHIFT_ADMIN_PASSWORD
 
 on:
   pull_request:
     branches: [main]
 
 jobs:
+  # --------------------------------------------------------------------------
+  # Validate: fmt check + terraform validate
+  # Runs in parallel across dev, staging, and prod to catch environment-specific
+  # drift early. Uses -backend=false so no AWS credentials are required.
+  # --------------------------------------------------------------------------
   validate:
     name: Validate (${{ matrix.environment }})
     runs-on: ubuntu-latest
@@ -35,9 +52,134 @@ jobs:
         run: terraform fmt -check -recursive
 
       # -backend=false skips S3 backend initialisation. Validate only checks
-      # HCL syntax and provider schema — no AWS calls needed.
+      # HCL syntax and provider schema, no AWS calls needed.
       - name: terraform init (no backend)
         run: terraform init -backend=false
 
       - name: terraform validate
         run: terraform validate
+
+  # --------------------------------------------------------------------------
+  # Security scan: tfsec
+  # Scans all Terraform modules for HIGH and CRITICAL severity findings.
+  # MEDIUM and LOW findings are reviewed and suppressed via inline
+  # tfsec:ignore comments where the pattern is intentional.
+  # soft_fail is true while the initial ignore annotations are being added.
+  # Set to false once all intentional findings are suppressed.
+  # --------------------------------------------------------------------------
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: .
+          minimum_severity: HIGH
+          # soft_fail: true during initial rollout. Set to false once all
+          # intentional HIGH findings have inline tfsec:ignore annotations.
+          soft_fail: true
+
+  # --------------------------------------------------------------------------
+  # Plan: terraform plan against dev, posted as PR comment
+  # Only runs after validate and security pass.
+  # Reviewers see the full plan diff before merging.
+  # --------------------------------------------------------------------------
+  plan:
+    name: Plan (dev)
+    runs-on: ubuntu-latest
+    needs: [validate, security]
+    environment: dev
+
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/edp-dev-github-actions-role
+          aws-region: eu-central-1
+
+      - name: Fetch MWAA artefacts from S3
+        # The orchestration module calls filemd5() on requirements.txt and plugins.zip
+        # at plan time. These files live at a path sibling to this repo locally.
+        # Downloading them from S3 (where they already exist) satisfies filemd5()
+        # and ensures the computed MD5 matches what is already in Terraform state,
+        # so Terraform sees no change and does not trigger a 35-minute MWAA update.
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          DEST="${GITHUB_WORKSPACE}/../platform-orchestration-mwaa-airflow"
+          mkdir -p "${DEST}"
+          aws s3 cp "s3://edp-dev-${ACCOUNT_ID}-mwaa-dags/requirements.txt" "${DEST}/requirements.txt"
+          aws s3 cp "s3://edp-dev-${ACCOUNT_ID}-mwaa-dags/plugins.zip" "${DEST}/plugins.zip"
+
+      - name: terraform init
+        working-directory: environments/dev
+        run: terraform init -backend-config="profile=" -reconfigure
+
+      - name: terraform plan
+        id: plan
+        working-directory: environments/dev
+        run: |
+          set +e
+          terraform plan -no-color -input=false 2>&1 | tee /tmp/plan.txt
+          echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set -e
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+          TF_VAR_redshift_admin_password: ${{ secrets.TF_VAR_REDSHIFT_ADMIN_PASSWORD }}
+          TF_VAR_github_org: enterprise-data-platform-emeka
+          TF_VAR_profile: ""
+
+      - name: Post plan as PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('/tmp/plan.txt', 'utf8');
+            const truncated = plan.length > 60000
+              ? plan.slice(0, 60000) + '\n\n... output truncated, see workflow logs for the full plan'
+              : plan;
+            const body = `### Terraform Plan (dev)\n\`\`\`hcl\n${truncated}\n\`\`\``;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body.startsWith('### Terraform Plan (dev)'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Fail if plan errored
+        if: steps.plan.outputs.exitcode == '1'
+        run: exit 1

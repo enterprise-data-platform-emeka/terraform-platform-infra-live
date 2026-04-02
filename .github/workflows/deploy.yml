@@ -1,27 +1,27 @@
 name: Deploy
 
-# Deployment workflow for all three Terraform environments.
+# Runs terraform plan + apply for the target environment.
 #
 # Triggers:
-#   - push to main    → automatically deploys to dev
-#   - workflow_dispatch → manually deploys to staging or prod
+#   - push to main    -> automatically deploys to dev
+#   - workflow_dispatch -> manually deploys to staging or prod
 #
-# Promotion path: dev (auto) → staging (manual) → prod (manual + approval)
+# Promotion path: dev (auto) -> staging (manual) -> prod (manual + approval)
 #
 # GitHub Environment protection rules enforce the gates:
-#   dev     — no protection (auto-deploys)
-#   staging — required reviewers before the job runs
-#   prod    — required reviewers + deployment protection rules
+#   dev     - no protection, auto-deploys on every merge to main
+#   staging - required reviewers before the job runs
+#   prod    - required reviewers + deployment protection rules
 #
-# AWS authentication uses OIDC (no long-lived access keys stored in secrets).
+# AWS authentication uses OIDC (no long-lived access keys stored anywhere).
 # Each environment has a dedicated IAM role: edp-{env}-github-actions-role
-# That role must be created in Terraform before this workflow can run.
 #
-# Required GitHub configuration (Settings → Secrets and variables):
-#   Repository variables:
-#     AWS_ACCOUNT_ID   — the 12-digit AWS account ID
-#   Repository secrets: none (OIDC replaces static credentials)
-#   Environments: dev, staging, prod (create in Settings → Environments)
+# Required GitHub configuration:
+#   Environment variables (Settings -> Environments -> {env} -> Variables):
+#     AWS_ACCOUNT_ID - the 12-digit AWS account ID
+#   Environment secrets (Settings -> Environments -> {env} -> Secrets):
+#     TF_VAR_DB_PASSWORD             - RDS master password
+#     TF_VAR_REDSHIFT_ADMIN_PASSWORD - Redshift admin password
 
 on:
   push:
@@ -39,13 +39,10 @@ jobs:
   deploy:
     name: Deploy to ${{ inputs.environment || 'dev' }}
     runs-on: ubuntu-latest
-
-    # This key activates GitHub Environment protection rules.
-    # staging and prod environments should have required reviewers configured.
     environment: ${{ inputs.environment || 'dev' }}
 
     permissions:
-      id-token: write   # required for OIDC
+      id-token: write
       contents: read
 
     env:
@@ -53,7 +50,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: environments/${{ env.TF_ENV }}
+        working-directory: environments/${{ inputs.environment || 'dev' }}
 
     steps:
       - name: Checkout
@@ -64,33 +61,55 @@ jobs:
         with:
           terraform_version: "~1.6"
 
-      # Assumes the role edp-{env}-github-actions-role via OIDC.
-      # The role trust policy must allow:
-      #   Principal: { Federated: "arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com" }
-      #   Condition: StringLike: { "token.actions.githubusercontent.com:sub": "repo:{owner}/{repo}:*" }
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/edp-${{ env.TF_ENV }}-github-actions-role
           aws-region: eu-central-1
 
-      # The profile setting in backend.tf ("dev-admin" etc.) is ignored in CI
-      # because AWS env vars set by configure-aws-credentials take precedence.
-      - name: terraform init
+      - name: Fetch MWAA artefacts from S3
+        # The orchestration module calls filemd5() on requirements.txt and plugins.zip
+        # at plan time. Downloading from S3 ensures the MD5 matches what is already
+        # in Terraform state, so Terraform sees no change to those resources and
+        # does not trigger a 35-minute MWAA environment update on every deploy.
+        working-directory: ${{ github.workspace }}
         run: |
-          terraform init \
-            -backend-config="profile=" \
-            -reconfigure
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          DEST="${GITHUB_WORKSPACE}/../platform-orchestration-mwaa-airflow"
+          mkdir -p "${DEST}"
+          aws s3 cp "s3://edp-${{ env.TF_ENV }}-${ACCOUNT_ID}-mwaa-dags/requirements.txt" "${DEST}/requirements.txt"
+          aws s3 cp "s3://edp-${{ env.TF_ENV }}-${ACCOUNT_ID}-mwaa-dags/plugins.zip" "${DEST}/plugins.zip"
+
+      # The profile setting in backend.tf is ignored in CI because AWS env vars
+      # set by configure-aws-credentials take precedence over named profiles.
+      - name: terraform init
+        run: terraform init -backend-config="profile=" -reconfigure
 
       - name: terraform plan
-        run: terraform plan -out=tfplan -input=false
+        id: plan
+        run: |
+          terraform plan -no-color -input=false -out=tfplan 2>&1 | tee /tmp/plan.txt
         env:
           TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
           TF_VAR_redshift_admin_password: ${{ secrets.TF_VAR_REDSHIFT_ADMIN_PASSWORD }}
           TF_VAR_github_org: enterprise-data-platform-emeka
-          # Override the profile variable so the AWS provider uses OIDC env vars
-          # instead of trying to load the dev-admin profile from ~/.aws/credentials
           TF_VAR_profile: ""
+
+      - name: Write plan to job summary
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo "### Terraform Plan (${{ env.TF_ENV }})" >> "$GITHUB_STEP_SUMMARY"
+          echo '```hcl' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/plan.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: terraform apply
         run: terraform apply -auto-approve -input=false tfplan
+
+      - name: Deployment summary
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo ""
+          echo "Terraform apply complete: edp-${{ env.TF_ENV }}"
+          echo "Environment: ${{ env.TF_ENV }}"
+          echo "Commit: ${{ github.sha }}"
