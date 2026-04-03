@@ -33,8 +33,3 @@ output "glue_catalog_database_silver" {
 output "glue_catalog_database_gold" {
   value = aws_glue_catalog_database.gold.name
 }
-
-output "github_actions_role_arn" {
-  value       = aws_iam_role.github_actions.arn
-  description = "ARN of the GitHub Actions OIDC role. Use this as the value for AWS_ACCOUNT_ID-derived role in workflow files."
-}
