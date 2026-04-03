@@ -29,6 +29,7 @@ on:
     paths:
       - 'environments/**'
       - 'modules/**'
+      - '.github/workflows/deploy.yml'
 
   workflow_dispatch:
     inputs:
