@@ -48,7 +48,7 @@ terraform-platform-infra-live/
 |---|---|
 | networking | VPC (Virtual Private Cloud), public subnet, two private subnets, Internet Gateway, route tables, S3 VPC Endpoint |
 | data-lake | Five S3 (Simple Storage Service) buckets: Bronze, Silver, Gold, Quarantine, Athena results |
-| iam-metadata | KMS (Key Management Service) encryption key, IAM (Identity and Access Management) roles for Glue/MWAA/Redshift/DMS, three Glue Catalog databases |
+| iam-metadata | KMS (Key Management Service) encryption key, IAM (Identity and Access Management) roles for Glue/MWAA/Redshift/DMS, three Glue Catalog databases. Note: the GitHub Actions OIDC provider and deploy roles live in `terraform-bootstrap`, not here. |
 | ingestion | RDS (Relational Database Service) PostgreSQL database, DMS (Database Migration Service) replication instance, DMS source and target endpoints, DMS replication task |
 | processing | Glue security configuration, Glue VPC connection, Athena workgroup |
 | serving | Redshift Serverless namespace and workgroup |
@@ -282,6 +282,7 @@ After `make apply dev` completes successfully, verify the following in the AWS c
 - `edp-dev-dms-s3-role` exists
 - `dms-vpc-role` exists
 - `dms-cloudwatch-logs-role` exists
+- `edp-dev-github-actions-role` exists (created by `terraform-bootstrap`, not this repo)
 
 **Glue Console:**
 - Three databases: `edp_dev_bronze`, `edp_dev_silver`, `edp_dev_gold`
@@ -346,7 +347,7 @@ Runs `terraform plan` against the dev environment using OIDC (OpenID Connect) au
 
 ### On merge to main
 
-The deploy workflow triggers automatically and runs `terraform plan` then `terraform apply` against dev. The plan output is written to the GitHub Actions job summary for audit trail. Authentication uses OIDC, no long-lived AWS credentials are stored anywhere.
+The deploy workflow triggers automatically and runs `terraform plan` then `terraform apply` against dev. The plan output is written to the GitHub Actions job summary for audit trail. Authentication uses OIDC (OpenID Connect), no long-lived AWS credentials are stored anywhere. The OIDC provider and `edp-dev-github-actions-role` are created by `terraform-bootstrap` and must exist before this workflow can run.
 
 Before the plan runs, `requirements.txt` and `plugins.zip` are downloaded from the MWAA S3 (Simple Storage Service) bucket. The orchestration module calls `filemd5()` on these files at plan time. Downloading them from S3 ensures the MD5 hash matches what is already in Terraform state, so Terraform sees no change to the MWAA environment and does not trigger a 35-minute MWAA environment update on every infrastructure deploy.
 
