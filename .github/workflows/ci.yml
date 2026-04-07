@@ -119,19 +119,6 @@ jobs:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/edp-dev-github-actions-role
           aws-region: eu-central-1
 
-      - name: Fetch MWAA artefacts from S3
-        # The orchestration module calls filemd5() on requirements.txt and plugins.zip
-        # at plan time. These files live at a path sibling to this repo locally.
-        # Downloading them from S3 (where they already exist) satisfies filemd5()
-        # and ensures the computed MD5 matches what is already in Terraform state,
-        # so Terraform sees no change and does not trigger a 35-minute MWAA update.
-        run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          DEST="${GITHUB_WORKSPACE}/../platform-orchestration-mwaa-airflow"
-          mkdir -p "${DEST}"
-          aws s3 cp "s3://edp-dev-${ACCOUNT_ID}-mwaa-dags/requirements.txt" "${DEST}/requirements.txt"
-          aws s3 cp "s3://edp-dev-${ACCOUNT_ID}-mwaa-dags/plugins.zip" "${DEST}/plugins.zip"
-
       - name: terraform init
         working-directory: environments/dev
         run: terraform init -backend-config="profile=" -reconfigure
