@@ -57,13 +57,3 @@ variable "force_destroy" {
   type        = bool
   default     = false
 }
-
-variable "requirements_txt_local_path" {
-  description = "Absolute path to requirements.txt on the local machine. Terraform uploads this to the DAGs bucket before creating the MWAA environment so MWAA can install Python packages on startup."
-  type        = string
-}
-
-variable "plugins_zip_local_path" {
-  description = "Absolute path to plugins.zip on the local machine. Build it with 'make package' in platform-orchestration-mwaa-airflow before running terraform apply. MWAA extracts this to /usr/local/airflow/plugins/ on every worker."
-  type        = string
-}

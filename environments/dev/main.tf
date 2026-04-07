@@ -82,11 +82,6 @@ module "orchestration" {
   nat_gateway_id     = module.networking.nat_gateway_id
   force_destroy      = true
 
-  # Terraform uploads these files to the DAGs bucket before creating the MWAA
-  # environment. Run 'make package' in platform-orchestration-mwaa-airflow first
-  # to build plugins.zip, then run 'make apply dev' here.
-  requirements_txt_local_path = abspath("${path.root}/../../../platform-orchestration-mwaa-airflow/requirements.txt")
-  plugins_zip_local_path      = abspath("${path.root}/../../../platform-orchestration-mwaa-airflow/plugins.zip")
 }
 
 # Bastion host — SSM tunnel to private RDS.

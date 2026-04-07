@@ -71,38 +71,6 @@ jobs:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/edp-${{ env.TF_ENV }}-github-actions-role
           aws-region: eu-central-1
 
-      - name: Fetch MWAA artefacts from S3
-        # The orchestration module calls filemd5() on requirements.txt and plugins.zip
-        # at plan time. Downloading from S3 ensures the MD5 matches what is already
-        # in Terraform state, so Terraform sees no change to those resources and
-        # does not trigger a 35-minute MWAA environment update on every deploy.
-        #
-        # On a fresh session the bucket may not exist yet or the files may not have
-        # been uploaded. In that case the download is skipped and empty placeholder
-        # files are written instead. Terraform will upload them when it creates the
-        # MWAA environment for the first time, and the real files will be synced by
-        # the platform-orchestration-mwaa-airflow deploy workflow shortly after.
-        working-directory: ${{ github.workspace }}
-        run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          DEST="${GITHUB_WORKSPACE}/../platform-orchestration-mwaa-airflow"
-          mkdir -p "${DEST}"
-          BUCKET="edp-${{ env.TF_ENV }}-${ACCOUNT_ID}-mwaa-dags"
-
-          if aws s3 cp "s3://${BUCKET}/requirements.txt" "${DEST}/requirements.txt" 2>/dev/null; then
-            echo "requirements.txt fetched from S3."
-          else
-            echo "requirements.txt not found in S3 (fresh deploy). Using empty placeholder."
-            touch "${DEST}/requirements.txt"
-          fi
-
-          if aws s3 cp "s3://${BUCKET}/plugins.zip" "${DEST}/plugins.zip" 2>/dev/null; then
-            echo "plugins.zip fetched from S3."
-          else
-            echo "plugins.zip not found in S3 (fresh deploy). Creating minimal placeholder."
-            python3 -c "import zipfile; zipfile.ZipFile('${DEST}/plugins.zip', 'w').close()"
-          fi
-
       # The profile setting in backend.tf is ignored in CI because AWS env vars
       # set by configure-aws-credentials take precedence over named profiles.
       - name: terraform init

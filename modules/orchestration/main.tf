@@ -75,22 +75,40 @@ resource "aws_security_group" "mwaa" {
   tags = { Name = "${var.name_prefix}-${var.environment}-mwaa-sg" }
 }
 
-# Upload requirements.txt and plugins.zip to the DAGs bucket before MWAA is created.
-# MWAA reads requirements.txt on startup to install Python packages (dbt, providers, etc.).
-# plugins.zip is extracted to /usr/local/airflow/plugins/ on every worker — the dbt
-# project lives here so the BashOperator can find it at a known path.
+# On first deploy, Terraform uploads placeholder files so the MWAA environment
+# can be created. After that, the application CI/CD pipelines own these artifacts:
+#   requirements.txt — platform-orchestration-mwaa-airflow deploy workflow
+#   plugins.zip      — platform-dbt-analytics deploy workflow
+#
+# Both pipelines call 'aws mwaa update-environment' with the new S3 object version
+# when content changes. Terraform ignores these files after the first upload, which
+# prevents a spurious 35-minute MWAA environment update on every infrastructure apply.
 resource "aws_s3_object" "requirements" {
-  bucket = aws_s3_bucket.dags.id
-  key    = "requirements.txt"
-  source = var.requirements_txt_local_path
-  etag   = filemd5(var.requirements_txt_local_path)
+  bucket       = aws_s3_bucket.dags.id
+  key          = "requirements.txt"
+  content      = "# placeholder — managed by platform-orchestration-mwaa-airflow CI\n"
+  content_type = "text/plain"
+
+  lifecycle {
+    # After first creation the application CI owns this file.
+    # Terraform must not overwrite it or installed packages regress to an empty list.
+    ignore_changes = [content, etag]
+  }
 }
 
 resource "aws_s3_object" "plugins" {
-  bucket = aws_s3_bucket.dags.id
-  key    = "plugins.zip"
-  source = var.plugins_zip_local_path
-  etag   = filemd5(var.plugins_zip_local_path)
+  bucket         = aws_s3_bucket.dags.id
+  key            = "plugins.zip"
+  # Minimal valid empty ZIP (22-byte end-of-central-directory record).
+  # The platform-dbt-analytics CI replaces this with the real dbt project on its
+  # first deploy, then calls 'aws mwaa update-environment' to apply it to workers.
+  content_base64 = "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA=="
+  content_type   = "application/zip"
+
+  lifecycle {
+    # After first creation the platform-dbt-analytics CI owns this file.
+    ignore_changes = [content_base64, etag]
+  }
 }
 
 # MWAA environment. Note: first apply takes 20-30 minutes for AWS to provision Airflow.
@@ -166,4 +184,16 @@ resource "aws_mwaa_environment" "this" {
     aws_s3_object.requirements,
     aws_s3_object.plugins,
   ]
+
+  lifecycle {
+    # plugins_s3_object_version and requirements_s3_object_version are managed
+    # by the application CI/CD pipelines via 'aws mwaa update-environment'.
+    # Terraform sets the initial version at environment creation time, then ignores
+    # subsequent changes so that a routine infrastructure apply never triggers a
+    # 35-minute MWAA environment update.
+    ignore_changes = [
+      plugins_s3_object_version,
+      requirements_s3_object_version,
+    ]
+  }
 }
