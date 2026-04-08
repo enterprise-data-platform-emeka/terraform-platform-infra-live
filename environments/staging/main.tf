@@ -80,3 +80,20 @@ module "orchestration" {
   mwaa_role_arn      = module.iam_metadata.mwaa_role_arn
   force_destroy      = false
 }
+
+# module "analytics_agent" — enable when deploying the agent to staging.
+# Requires the SSM parameter /edp/staging/anthropic_api_key to be created first.
+#
+# module "analytics_agent" {
+#   source = "../../modules/analytics-agent"
+#
+#   environment        = var.environment
+#   name_prefix        = var.name_prefix
+#   vpc_id             = module.networking.vpc_id
+#   private_subnet_ids = module.networking.private_subnet_ids
+#   bronze_bucket_name    = module.data_lake.bronze_bucket_name
+#   gold_bucket_name      = module.data_lake.gold_bucket_name
+#   athena_results_bucket = module.data_lake.athena_results_bucket
+#   kms_key_arn           = module.iam_metadata.kms_key_arn
+#   glue_gold_database    = module.iam_metadata.glue_catalog_database_gold
+# }

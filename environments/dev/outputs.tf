@@ -1,4 +1,26 @@
-# Ingestion and bastion outputs — commented out after Phase 1 CDC run.
+# ── Analytics Agent outputs ───────────────────────────────────────────────────
+
+output "analytics_agent_ecr_url" {
+  description = "ECR repository URL — paste into the CI deploy workflow"
+  value       = module.analytics_agent.ecr_repository_url
+}
+
+output "analytics_agent_cluster" {
+  description = "ECS cluster name — used in aws ecs run-task commands"
+  value       = module.analytics_agent.ecs_cluster_name
+}
+
+output "analytics_agent_task_definition" {
+  description = "Latest ECS task definition ARN"
+  value       = module.analytics_agent.task_definition_arn
+}
+
+output "analytics_agent_log_group" {
+  description = "CloudWatch log group for structured JSON agent logs"
+  value       = module.analytics_agent.log_group_name
+}
+
+# ── Ingestion and bastion outputs — commented out after Phase 1 CDC run ───────
 # Uncomment when module "ingestion" and bastion are re-enabled.
 #
 # output "rds_endpoint" {
