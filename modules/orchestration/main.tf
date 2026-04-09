@@ -75,38 +75,42 @@ resource "aws_security_group" "mwaa" {
   tags = { Name = "${var.name_prefix}-${var.environment}-mwaa-sg" }
 }
 
-# On first deploy, Terraform uploads placeholder files so the MWAA environment
-# can be created. After that, the application CI/CD pipelines own these artifacts:
-#   requirements.txt — platform-orchestration-mwaa-airflow deploy workflow
-#   plugins.zip      — platform-dbt-analytics deploy workflow
+# requirements.txt is infrastructure. Terraform owns and manages it fully.
+# MWAA's Python runtime environment (which packages are installed) is part of
+# the infrastructure definition, the same way an EC2 AMI or user_data is.
 #
-# Both pipelines call 'aws mwaa update-environment' with the new S3 object version
-# when content changes. Terraform ignores these files after the first upload, which
-# prevents a spurious 35-minute MWAA environment update on every infrastructure apply.
+# Terraform uploads requirements.txt when MWAA is first created so the
+# environment comes up with all packages already installed. When content
+# changes, Terraform detects it (via etag drift), uploads a new S3 version,
+# and the aws_mwaa_environment resource picks up the new version_id and
+# triggers an update. No application CI ever calls update-environment.
+#
+# IMPORTANT: when Python packages need to change, update this file
+# (modules/orchestration/requirements.txt) and run terraform apply.
+# Also update platform-orchestration-mwaa-airflow/requirements.txt so local
+# development stays in sync.
+#
+# plugins.zip: Permanent empty placeholder. The dbt project is not in
+# plugins.zip. It is synced to s3://{mwaa-bucket}/dbt/platform-dbt-analytics/
+# by the platform-dbt-analytics deploy workflow and downloaded at task runtime.
 resource "aws_s3_object" "requirements" {
   bucket       = aws_s3_bucket.dags.id
   key          = "requirements.txt"
-  content      = "# placeholder — managed by platform-orchestration-mwaa-airflow CI\n"
+  source       = "${path.module}/requirements.txt"
+  etag         = filemd5("${path.module}/requirements.txt")
   content_type = "text/plain"
-
-  lifecycle {
-    # After first creation the application CI owns this file.
-    # Terraform must not overwrite it or installed packages regress to an empty list.
-    ignore_changes = [content, etag]
-  }
 }
 
 resource "aws_s3_object" "plugins" {
   bucket         = aws_s3_bucket.dags.id
   key            = "plugins.zip"
   # Minimal valid empty ZIP (22-byte end-of-central-directory record).
-  # The platform-dbt-analytics CI replaces this with the real dbt project on its
-  # first deploy, then calls 'aws mwaa update-environment' to apply it to workers.
+  # This is a permanent placeholder. The dbt project is delivered via S3 sync,
+  # not plugins.zip. This file is never updated after initial creation.
   content_base64 = "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA=="
   content_type   = "application/zip"
 
   lifecycle {
-    # After first creation the platform-dbt-analytics CI owns this file.
     ignore_changes = [content_base64, etag]
   }
 }
@@ -186,14 +190,16 @@ resource "aws_mwaa_environment" "this" {
   ]
 
   lifecycle {
-    # plugins_s3_object_version and requirements_s3_object_version are managed
-    # by the application CI/CD pipelines via 'aws mwaa update-environment'.
-    # Terraform sets the initial version at environment creation time, then ignores
-    # subsequent changes so that a routine infrastructure apply never triggers a
-    # 35-minute MWAA environment update.
+    # plugins_s3_object_version: plugins.zip is a permanent empty placeholder.
+    # It never changes, so Terraform ignores drift on this field to prevent a
+    # spurious 35-minute MWAA update if the version ID ever diverges.
+    #
+    # requirements_s3_object_version is NOT ignored. Terraform tracks it fully.
+    # When requirements.txt content changes, Terraform uploads a new S3 version
+    # and updates this field, which triggers a MWAA environment update (~35 min).
+    # That is the correct and expected behaviour for a package change.
     ignore_changes = [
       plugins_s3_object_version,
-      requirements_s3_object_version,
     ]
   }
 }
