@@ -84,12 +84,16 @@ resource "aws_ecs_cluster_capacity_providers" "agent" {
 
 # ── CloudWatch log group ──────────────────────────────────────────────────────
 # Receives structured JSON logs from agent/logging.py. 30-day retention matches
-# the rest of the platform. Encrypted with the platform KMS key.
+# the rest of the platform.
 
 resource "aws_cloudwatch_log_group" "agent" {
   name              = "/ecs/${local.prefix}-analytics-agent"
   retention_in_days = 30
-  kms_key_id        = var.kms_key_arn
+  # kms_key_id is intentionally omitted. CloudWatch Logs requires the KMS key
+  # policy to explicitly grant logs.{region}.amazonaws.com permission to use
+  # the key. The platform KMS key does not include that grant. Log content
+  # here is operational metadata, not sensitive pipeline data, so
+  # service-managed encryption is appropriate.
 }
 
 # ── IAM — task execution role ─────────────────────────────────────────────────
