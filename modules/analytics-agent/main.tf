@@ -257,6 +257,20 @@ data "aws_iam_policy_document" "task" {
       "arn:aws:ssm:${local.region}:${local.account_id}:parameter${local.ssm_api_key_param}",
     ]
   }
+
+  # ECS Exec — allows aws ecs execute-command to open an interactive shell
+  # into a running Fargate task for debugging and manual testing.
+  statement {
+    sid    = "ECSExec"
+    effect = "Allow"
+    actions = [
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "task" {
@@ -344,6 +358,9 @@ resource "aws_ecs_task_definition" "agent" {
       name      = "agent"
       image     = "${aws_ecr_repository.agent.repository_url}:latest"
       essential = true
+
+      # Required for ECS Exec (interactive shell via aws ecs execute-command).
+      linuxParameters = { initProcessEnabled = true }
 
       environment = [
         { name = "ENVIRONMENT",           value = var.environment },
@@ -438,11 +455,12 @@ resource "aws_lb_listener" "agent_http" {
 # triggering a Terraform diff on next plan.
 
 resource "aws_ecs_service" "agent" {
-  name            = "${local.prefix}-analytics-agent"
-  cluster         = aws_ecs_cluster.agent.id
-  task_definition = aws_ecs_task_definition.agent.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+  name                   = "${local.prefix}-analytics-agent"
+  cluster                = aws_ecs_cluster.agent.id
+  task_definition        = aws_ecs_task_definition.agent.arn
+  desired_count          = var.desired_count
+  launch_type            = "FARGATE"
+  enable_execute_command = true
 
   network_configuration {
     subnets          = var.private_subnet_ids
