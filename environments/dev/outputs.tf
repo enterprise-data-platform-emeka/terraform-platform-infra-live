@@ -20,6 +20,16 @@ output "analytics_agent_log_group" {
   value       = module.analytics_agent.log_group_name
 }
 
+output "analytics_agent_alb_dns" {
+  description = "Internal ALB DNS name — POST to http://{dns}/ask from within the VPC"
+  value       = module.analytics_agent.alb_dns_name
+}
+
+output "analytics_agent_service" {
+  description = "ECS service name"
+  value       = module.analytics_agent.ecs_service_name
+}
+
 # ── Ingestion and bastion outputs — commented out after Phase 1 CDC run ───────
 # Uncomment when module "ingestion" and bastion are re-enabled.
 #
