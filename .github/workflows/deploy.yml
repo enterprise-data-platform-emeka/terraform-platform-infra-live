@@ -34,10 +34,10 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Target environment"
+        description: "Target environment (dev auto-deploys on push to main)"
         required: true
         type: choice
-        options: [staging, prod]
+        options: [dev, staging, prod]
 
 jobs:
   deploy:

@@ -371,9 +371,10 @@ resource "aws_ecs_task_definition" "agent" {
     }
   ])
 
-  lifecycle {
-    ignore_changes = [container_definitions]
-  }
+  # No ignore_changes here: Terraform must register a new task definition
+  # revision whenever container_definitions changes (e.g. adding portMappings).
+  # The ECS service has ignore_changes = [task_definition] so CI-pushed
+  # revisions are never rolled back by terraform apply.
 }
 
 # ── ALB ───────────────────────────────────────────────────────────────────────
