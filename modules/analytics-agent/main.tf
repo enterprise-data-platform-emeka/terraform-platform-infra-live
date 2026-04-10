@@ -352,6 +352,14 @@ resource "aws_ecs_task_definition" "agent" {
         { name = "SSM_API_KEY_PARAM",     value = local.ssm_api_key_param },
       ]
 
+      portMappings = [
+        {
+          containerPort = 8080
+          hostPort      = 8080
+          protocol      = "tcp"
+        }
+      ]
+
       logConfiguration = {
         logDriver = "awslogs"
         options = {
