@@ -341,6 +341,8 @@ resource "aws_ecs_task_definition" "agent" {
       image     = "${aws_ecr_repository.agent.repository_url}:latest"
       essential = true
 
+      command = ["uvicorn", "agent.main:app", "--host", "0.0.0.0", "--port", "8080"]
+
       environment = [
         { name = "ENVIRONMENT",           value = var.environment },
         { name = "AWS_REGION",            value = local.region },
