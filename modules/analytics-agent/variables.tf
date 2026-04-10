@@ -54,3 +54,9 @@ variable "task_memory" {
   type        = number
   default     = 1024
 }
+
+variable "desired_count" {
+  description = "Number of ECS service tasks to run. Set to 0 to pause the service between test sessions without destroying it."
+  type        = number
+  default     = 1
+}

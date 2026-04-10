@@ -131,7 +131,7 @@ resource "aws_iam_role" "task" {
 
 data "aws_iam_policy_document" "task" {
 
-  # Gold S3 — read only. The agent queries Gold Parquet files via Athena.
+  # Gold S3 — read for Athena queries, write for chart PNGs uploaded by charts.py.
   statement {
     sid    = "GoldS3ReadOnly"
     effect = "Allow"
@@ -142,6 +142,17 @@ data "aws_iam_policy_document" "task" {
     resources = [
       "arn:aws:s3:::${var.gold_bucket_name}",
       "arn:aws:s3:::${var.gold_bucket_name}/*",
+    ]
+  }
+
+  # Gold S3 charts/ prefix — write only. charts.py uploads one PNG per question.
+  # Presigned URL expiry means the object is effectively temporary.
+  statement {
+    sid     = "GoldChartsWrite"
+    effect  = "Allow"
+    actions = ["s3:PutObject"]
+    resources = [
+      "arn:aws:s3:::${var.gold_bucket_name}/charts/*",
     ]
   }
 
@@ -250,22 +261,61 @@ resource "aws_iam_role_policy" "task" {
   policy = data.aws_iam_policy_document.task.json
 }
 
-# ── Security group ────────────────────────────────────────────────────────────
-# ECS tasks need outbound HTTPS to reach AWS APIs (S3, Glue, Athena, SSM) via
-# the NAT Gateway and the Anthropic API. No inbound until Phase 11 adds the ALB.
+# ── Security groups ───────────────────────────────────────────────────────────
+# Two security groups are needed: one for the ALB (port 80 inbound from anywhere)
+# and one for the ECS tasks (port 8080 inbound from ALB, HTTPS egress to AWS APIs).
+#
+# The ingress rule on the ECS SG is defined as a separate aws_security_group_rule
+# resource (not inline) to break the circular dependency between the two SGs.
+
+resource "aws_security_group" "alb" {
+  name        = "${local.prefix}-analytics-agent-alb-sg"
+  description = "Analytics agent ALB - inbound port 80"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "HTTP from anywhere (dev environment)"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "All outbound (ALB routes to ECS tasks)"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
 
 resource "aws_security_group" "agent" {
   name        = "${local.prefix}-analytics-agent-sg"
-  description = "Analytics agent ECS tasks - egress only"
+  description = "Analytics agent ECS tasks"
   vpc_id      = var.vpc_id
 
+  # No inline ingress — defined separately below to avoid circular SG reference.
+
   egress {
-    description = "HTTPS to AWS APIs and Anthropic API"
+    description = "HTTPS to AWS APIs and Anthropic API via NAT Gateway"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+}
+
+# Separate rule so the ALB SG and ECS SG can reference each other without
+# creating a Terraform circular dependency at the resource level.
+resource "aws_security_group_rule" "agent_ingress_from_alb" {
+  type                     = "ingress"
+  security_group_id        = aws_security_group.agent.id
+  from_port                = 8080
+  to_port                  = 8080
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb.id
+  description              = "Port 8080 from ALB to FastAPI"
 }
 
 # ── ECS task definition ───────────────────────────────────────────────────────
@@ -316,4 +366,89 @@ resource "aws_ecs_task_definition" "agent" {
   lifecycle {
     ignore_changes = [container_definitions]
   }
+}
+
+# ── ALB ───────────────────────────────────────────────────────────────────────
+# Internal ALB — accessible from within the VPC only. For a test session, reach
+# it via the bastion host or ECS Exec. The VPC design has only one public subnet
+# so the ALB is placed in the two private subnets (each in a different AZ), which
+# is all an ALB needs to operate.
+#
+# For the test-and-destroy workflow, HTTP (port 80) is sufficient. HTTPS requires
+# an ACM certificate which needs a domain name — out of scope for dev testing.
+
+resource "aws_lb" "agent" {
+  name               = "${local.prefix}-agent-alb"
+  internal           = true
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = var.private_subnet_ids
+
+  # Access logs are disabled for dev. Enable for staging/prod when an access
+  # log S3 bucket is available.
+  enable_deletion_protection = false
+}
+
+resource "aws_lb_target_group" "agent" {
+  name        = "${local.prefix}-agent-tg"
+  port        = 8080
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip" # Required for Fargate awsvpc networking mode.
+
+  health_check {
+    path                = "/health"
+    protocol            = "HTTP"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    matcher             = "200"
+  }
+}
+
+resource "aws_lb_listener" "agent_http" {
+  load_balancer_arn = aws_lb.agent.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.agent.arn
+  }
+}
+
+# ── ECS service ───────────────────────────────────────────────────────────────
+# Keeps one Fargate task running behind the ALB. desired_count defaults to 1 and
+# is ignored by Terraform after initial creation so `aws ecs update-service
+# --desired-count 0` can pause the service between test sessions without
+# triggering a Terraform diff on next plan.
+
+resource "aws_ecs_service" "agent" {
+  name            = "${local.prefix}-analytics-agent"
+  cluster         = aws_ecs_cluster.agent.id
+  task_definition = aws_ecs_task_definition.agent.arn
+  desired_count   = var.desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [aws_security_group.agent.id]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.agent.arn
+    container_name   = "agent"
+    container_port   = 8080
+  }
+
+  # CI registers new task definition revisions and calls update-service directly.
+  # Terraform owns sizing, networking, and IAM — not the specific image tag or
+  # the current scale of the service.
+  lifecycle {
+    ignore_changes = [task_definition, desired_count]
+  }
+
+  depends_on = [aws_lb_listener.agent_http]
 }

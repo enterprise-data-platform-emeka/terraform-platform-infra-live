@@ -27,3 +27,13 @@ output "log_group_name" {
   description = "CloudWatch log group — query here for structured JSON agent logs"
   value       = aws_cloudwatch_log_group.agent.name
 }
+
+output "alb_dns_name" {
+  description = "Internal ALB DNS name. POST to http://{alb_dns_name}/ask from within the VPC."
+  value       = aws_lb.agent.dns_name
+}
+
+output "ecs_service_name" {
+  description = "ECS service name — used by CI to trigger rolling deploys."
+  value       = aws_ecs_service.agent.name
+}
