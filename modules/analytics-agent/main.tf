@@ -177,10 +177,14 @@ data "aws_iam_policy_document" "task" {
   # metadata/dbt/*: agent reads dbt catalog.json at startup to enrich schemas.
   # metadata/agent-audit/*: agent writes one JSON audit record per question.
   statement {
-    sid     = "BronzeMetadataRead"
-    effect  = "Allow"
-    actions = ["s3:GetObject"]
+    sid    = "BronzeMetadataRead"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:ListBucket",
+    ]
     resources = [
+      "arn:aws:s3:::${var.bronze_bucket_name}",
       "arn:aws:s3:::${var.bronze_bucket_name}/metadata/dbt/*",
     ]
   }
@@ -340,8 +344,6 @@ resource "aws_ecs_task_definition" "agent" {
       name      = "agent"
       image     = "${aws_ecr_repository.agent.repository_url}:latest"
       essential = true
-
-      command = ["uvicorn", "agent.main:app", "--host", "0.0.0.0", "--port", "8080"]
 
       environment = [
         { name = "ENVIRONMENT",           value = var.environment },
