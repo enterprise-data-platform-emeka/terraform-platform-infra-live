@@ -92,6 +92,7 @@ module "orchestration" {
 #   vpc_id             = module.networking.vpc_id
 #   private_subnet_ids = module.networking.private_subnet_ids
 #   bronze_bucket_name    = module.data_lake.bronze_bucket_name
+#   silver_bucket_name    = module.data_lake.silver_bucket_name
 #   gold_bucket_name      = module.data_lake.gold_bucket_name
 #   athena_results_bucket = module.data_lake.athena_results_bucket
 #   kms_key_arn           = module.iam_metadata.kms_key_arn

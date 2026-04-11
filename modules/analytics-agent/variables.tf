@@ -43,6 +43,11 @@ variable "glue_gold_database" {
   type        = string
 }
 
+variable "silver_bucket_name" {
+  description = "Name of the Silver S3 bucket. Athena reads Silver Parquet files when resolving Gold views."
+  type        = string
+}
+
 variable "glue_silver_database" {
   description = "Glue Catalog database name for the Silver layer. Athena needs this to resolve Gold views that reference Silver tables."
   type        = string

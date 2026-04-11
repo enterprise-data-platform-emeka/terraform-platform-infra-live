@@ -145,6 +145,21 @@ data "aws_iam_policy_document" "task" {
     ]
   }
 
+  # Silver S3 — read only. Gold views are built on Silver tables; Athena must
+  # read the underlying Silver Parquet files when resolving Gold view queries.
+  statement {
+    sid    = "SilverS3ReadOnly"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:ListBucket",
+    ]
+    resources = [
+      "arn:aws:s3:::${var.silver_bucket_name}",
+      "arn:aws:s3:::${var.silver_bucket_name}/*",
+    ]
+  }
+
   # Gold S3 charts/ prefix — write only. charts.py uploads one PNG per question.
   # Presigned URL expiry means the object is effectively temporary.
   statement {
