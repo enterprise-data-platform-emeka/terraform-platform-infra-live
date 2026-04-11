@@ -21,6 +21,7 @@ locals {
 resource "aws_ecr_repository" "agent" {
   name                 = "${local.prefix}-analytics-agent"
   image_tag_mutability = "MUTABLE"
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true
