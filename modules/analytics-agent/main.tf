@@ -233,6 +233,10 @@ data "aws_iam_policy_document" "task" {
       "arn:aws:glue:${local.region}:${local.account_id}:table/${var.glue_gold_database}/*",
       "arn:aws:glue:${local.region}:${local.account_id}:database/${var.glue_silver_database}",
       "arn:aws:glue:${local.region}:${local.account_id}:table/${var.glue_silver_database}/*",
+      # dbt-athena embeds the dbt source name (silver) as the schema in Gold views,
+      # not the full Glue database name. Athena resolves views using this literal name.
+      "arn:aws:glue:${local.region}:${local.account_id}:database/silver",
+      "arn:aws:glue:${local.region}:${local.account_id}:table/silver/*",
     ]
   }
 
