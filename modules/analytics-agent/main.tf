@@ -212,10 +212,11 @@ data "aws_iam_policy_document" "task" {
     resources = [var.kms_key_arn]
   }
 
-  # Glue Catalog — read only on the Gold database.
-  # GetTables is called at startup to load all Gold schemas into the system prompt.
+  # Glue Catalog — read only on Gold and Silver databases.
+  # Gold tables are views built on Silver; Athena must resolve both databases
+  # when executing queries against Gold views.
   statement {
-    sid    = "GlueCatalogGoldReadOnly"
+    sid    = "GlueCatalogReadOnly"
     effect = "Allow"
     actions = [
       "glue:GetDatabase",
@@ -230,6 +231,8 @@ data "aws_iam_policy_document" "task" {
       "arn:aws:glue:${local.region}:${local.account_id}:catalog",
       "arn:aws:glue:${local.region}:${local.account_id}:database/${var.glue_gold_database}",
       "arn:aws:glue:${local.region}:${local.account_id}:table/${var.glue_gold_database}/*",
+      "arn:aws:glue:${local.region}:${local.account_id}:database/${var.glue_silver_database}",
+      "arn:aws:glue:${local.region}:${local.account_id}:table/${var.glue_silver_database}/*",
     ]
   }
 

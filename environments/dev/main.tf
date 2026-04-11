@@ -95,6 +95,7 @@ module "analytics_agent" {
   athena_results_bucket = module.data_lake.athena_results_bucket
   kms_key_arn           = module.iam_metadata.kms_key_arn
   glue_gold_database    = module.iam_metadata.glue_catalog_database_gold
+  glue_silver_database  = module.iam_metadata.glue_catalog_database_silver
 }
 
 # Bastion host — SSM tunnel to private RDS.

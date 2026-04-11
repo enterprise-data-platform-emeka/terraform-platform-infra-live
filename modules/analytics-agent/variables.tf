@@ -43,6 +43,11 @@ variable "glue_gold_database" {
   type        = string
 }
 
+variable "glue_silver_database" {
+  description = "Glue Catalog database name for the Silver layer. Athena needs this to resolve Gold views that reference Silver tables."
+  type        = string
+}
+
 variable "task_cpu" {
   description = "ECS task CPU units (512 = 0.5 vCPU)"
   type        = number
