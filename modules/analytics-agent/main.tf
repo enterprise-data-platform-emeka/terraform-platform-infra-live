@@ -166,6 +166,7 @@ data "aws_iam_policy_document" "task" {
       "s3:PutObject",
       "s3:DeleteObject",
       "s3:ListBucket",
+      "s3:GetBucketLocation",
     ]
     resources = [
       "arn:aws:s3:::${var.athena_results_bucket}",
