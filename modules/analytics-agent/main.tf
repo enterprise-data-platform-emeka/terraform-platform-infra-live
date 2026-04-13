@@ -456,10 +456,10 @@ resource "aws_ecs_task_definition" "agent" {
 
 resource "aws_lb" "agent" {
   name               = "${local.prefix}-agent-alb"
-  internal           = true
+  internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = var.private_subnet_ids
+  subnets            = var.public_subnet_ids
 
   # Access logs are disabled for dev. Enable for staging/prod when an access
   # log S3 bucket is available.

@@ -90,6 +90,7 @@ module "analytics_agent" {
   name_prefix        = var.name_prefix
   vpc_id             = module.networking.vpc_id
   private_subnet_ids = module.networking.private_subnet_ids
+  public_subnet_ids  = module.networking.public_subnet_ids
   bronze_bucket_name    = module.data_lake.bronze_bucket_name
   silver_bucket_name    = module.data_lake.silver_bucket_name
   gold_bucket_name      = module.data_lake.gold_bucket_name

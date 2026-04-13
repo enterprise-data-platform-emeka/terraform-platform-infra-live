@@ -18,6 +18,11 @@ variable "private_subnet_ids" {
   type        = list(string)
 }
 
+variable "public_subnet_ids" {
+  description = "Public subnet IDs for the internet-facing ALB (must span at least 2 AZs)"
+  type        = list(string)
+}
+
 variable "bronze_bucket_name" {
   description = "Bronze S3 bucket name — agent reads metadata/dbt/* and writes metadata/agent-audit/*"
   type        = string
