@@ -295,6 +295,14 @@ data "aws_iam_policy_document" "task" {
     ]
     resources = ["*"]
   }
+
+  # SES — send PDF report emails. Only active when SES_SENDER_EMAIL is set.
+  statement {
+    sid       = "SESSendReport"
+    effect    = "Allow"
+    actions   = ["ses:SendRawEmail"]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "task" {
@@ -413,6 +421,7 @@ resource "aws_ecs_task_definition" "agent" {
         { name = "ATHENA_WORKGROUP",      value = local.athena_workgroup },
         { name = "GLUE_GOLD_DATABASE",    value = var.glue_gold_database },
         { name = "SSM_API_KEY_PARAM",     value = local.ssm_api_key_param },
+        { name = "SES_SENDER_EMAIL",      value = var.ses_sender_email },
       ]
 
       portMappings = [

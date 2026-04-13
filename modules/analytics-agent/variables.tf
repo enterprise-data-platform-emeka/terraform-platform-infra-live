@@ -23,6 +23,12 @@ variable "public_subnet_ids" {
   type        = list(string)
 }
 
+variable "ses_sender_email" {
+  description = "SES-verified sender address for PDF email reports. Leave empty to disable the send-report feature."
+  type        = string
+  default     = ""
+}
+
 variable "bronze_bucket_name" {
   description = "Bronze S3 bucket name — agent reads metadata/dbt/* and writes metadata/agent-audit/*"
   type        = string
