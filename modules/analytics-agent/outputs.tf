@@ -33,6 +33,11 @@ output "alb_dns_name" {
   value       = aws_lb.agent.dns_name
 }
 
+output "streamlit_url" {
+  description = "Streamlit UI URL. Open in a browser from within the VPC: http://{alb_dns_name}:8501"
+  value       = "http://${aws_lb.agent.dns_name}:8501"
+}
+
 output "ecs_service_name" {
   description = "ECS service name — used by CI to trigger rolling deploys."
   value       = aws_ecs_service.agent.name

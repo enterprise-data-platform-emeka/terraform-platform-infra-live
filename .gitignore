@@ -5,3 +5,15 @@ crash.log
 .terraform.lock.hcl
 .vscode/
 *.log
+
+# Sensitive files — never commit these
+*.tfvars
+secret*.tfvars
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials
+aws_credentials

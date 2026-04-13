@@ -312,13 +312,21 @@ resource "aws_iam_role_policy" "task" {
 
 resource "aws_security_group" "alb" {
   name        = "${local.prefix}-analytics-agent-alb-sg"
-  description = "Analytics agent ALB - inbound port 80"
+  description = "Analytics agent ALB - inbound ports 80 and 8501"
   vpc_id      = var.vpc_id
 
   ingress {
     description = "HTTP from anywhere (dev environment)"
     from_port   = 80
     to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Streamlit UI from anywhere (dev environment)"
+    from_port   = 8501
+    to_port     = 8501
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -348,7 +356,7 @@ resource "aws_security_group" "agent" {
   }
 }
 
-# Separate rule so the ALB SG and ECS SG can reference each other without
+# Separate rules so the ALB SG and ECS SG can reference each other without
 # creating a Terraform circular dependency at the resource level.
 resource "aws_security_group_rule" "agent_ingress_from_alb" {
   type                     = "ingress"
@@ -358,6 +366,16 @@ resource "aws_security_group_rule" "agent_ingress_from_alb" {
   protocol                 = "tcp"
   source_security_group_id = aws_security_group.alb.id
   description              = "Port 8080 from ALB to FastAPI"
+}
+
+resource "aws_security_group_rule" "agent_ingress_streamlit_from_alb" {
+  type                     = "ingress"
+  security_group_id        = aws_security_group.agent.id
+  from_port                = 8501
+  to_port                  = 8501
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb.id
+  description              = "Port 8501 from ALB to Streamlit"
 }
 
 # ── ECS task definition ───────────────────────────────────────────────────────
@@ -401,6 +419,11 @@ resource "aws_ecs_task_definition" "agent" {
         {
           containerPort = 8080
           hostPort      = 8080
+          protocol      = "tcp"
+        },
+        {
+          containerPort = 8501
+          hostPort      = 8501
           protocol      = "tcp"
         }
       ]
@@ -472,6 +495,35 @@ resource "aws_lb_listener" "agent_http" {
   }
 }
 
+resource "aws_lb_target_group" "streamlit" {
+  name        = "${local.prefix}-streamlit-tg"
+  port        = 8501
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    path                = "/_stcore/health"
+    protocol            = "HTTP"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    matcher             = "200"
+  }
+}
+
+resource "aws_lb_listener" "streamlit" {
+  load_balancer_arn = aws_lb.agent.arn
+  port              = 8501
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.streamlit.arn
+  }
+}
+
 # ── ECS service ───────────────────────────────────────────────────────────────
 # Keeps one Fargate task running behind the ALB. desired_count defaults to 1 and
 # is ignored by Terraform after initial creation so `aws ecs update-service
@@ -498,6 +550,12 @@ resource "aws_ecs_service" "agent" {
     container_port   = 8080
   }
 
+  load_balancer {
+    target_group_arn = aws_lb_target_group.streamlit.arn
+    container_name   = "agent"
+    container_port   = 8501
+  }
+
   # CI registers new task definition revisions and calls update-service directly.
   # Terraform owns sizing, networking, and IAM — not the specific image tag or
   # the current scale of the service.
@@ -505,5 +563,5 @@ resource "aws_ecs_service" "agent" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  depends_on = [aws_lb_listener.agent_http]
+  depends_on = [aws_lb_listener.agent_http, aws_lb_listener.streamlit]
 }
