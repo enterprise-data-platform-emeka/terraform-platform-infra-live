@@ -2,6 +2,8 @@
 
 This repository is part of the [Enterprise Data Platform](https://github.com/enterprise-data-platform-emeka/platform-docs). For the full project overview, architecture diagram, and build order, start there.
 
+**Previous:** [terraform-bootstrap](https://github.com/enterprise-data-platform-emeka/terraform-bootstrap): that repo created the S3 remote state backend and OIDC roles this infrastructure needs to store Terraform state and authenticate CI/CD.
+
 ---
 
 This repository contains all the AWS (Amazon Web Services) infrastructure for the Enterprise Data Platform, written as Terraform code. If the `terraform-bootstrap` repository creates the filing cabinet (remote state storage), this repository builds everything inside it: the private network, the data storage buckets, the encryption keys, the permissions, the databases, the data processing environment, the data warehouse, and the pipeline orchestration system.
@@ -368,3 +370,7 @@ Each module has its own documentation file with detailed explanations of every r
 - `modules/serving/serving.md`
 - `modules/processing/` (coming soon)
 - `modules/orchestration/` (coming soon)
+
+---
+
+**Next:** [platform-cdc-simulator](https://github.com/enterprise-data-platform-emeka/platform-cdc-simulator): with the infrastructure running and DMS waiting, use the CDC simulator to generate PostgreSQL OLTP traffic for DMS to replicate into the Bronze S3 layer.
