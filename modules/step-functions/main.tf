@@ -163,7 +163,15 @@ resource "aws_sfn_state_machine" "pipeline" {
             }
           }
         ]
-        Next = "StartSilverCrawler"
+        Next = "SilverJobsComplete"
+      }
+
+      SilverJobsComplete = {
+        Type       = "Pass"
+        Comment    = "Discard the parallel job results array. The crawler polling loop requires a plain object as input, not an array."
+        Result     = {}
+        ResultPath = "$"
+        Next       = "StartSilverCrawler"
       }
 
       StartSilverCrawler = {
