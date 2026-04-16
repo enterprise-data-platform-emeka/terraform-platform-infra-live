@@ -215,6 +215,11 @@ resource "aws_sfn_state_machine" "pipeline" {
             Variable     = "$.CrawlerResult.Crawler.State"
             StringEquals = "RUNNING"
             Next         = "WaitForCrawler"
+          },
+          {
+            Variable     = "$.CrawlerResult.Crawler.State"
+            StringEquals = "STOPPING"
+            Next         = "WaitForCrawler"
           }
         ]
         Default = "CrawlerFailed"
