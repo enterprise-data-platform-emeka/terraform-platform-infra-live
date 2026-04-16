@@ -37,10 +37,11 @@ variable "name_prefix" { default = "edp" }
 #   default     = false
 # }
 
-# ── Serving ──────────────────────────────────────────────────────────────────
-
-variable "redshift_admin_password" {
-  description = "Admin password for Redshift Serverless namespace. Provide via TF_VAR_redshift_admin_password env var or secret.tfvars"
-  type        = string
-  sensitive   = true
-}
+# ── Serving (commented out: module "serving" is disabled) ────────────────────
+# Uncomment when re-enabling Redshift Serverless in main.tf.
+#
+# variable "redshift_admin_password" {
+#   description = "Admin password for Redshift Serverless namespace. Provide via TF_VAR_redshift_admin_password env var or secret.tfvars"
+#   type        = string
+#   sensitive   = true
+# }

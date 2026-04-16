@@ -71,17 +71,34 @@ module "processing" {
 #   redshift_admin_password = var.redshift_admin_password
 # }
 
-module "orchestration" {
-  source             = "../../modules/orchestration"
-  environment        = var.environment
-  name_prefix        = var.name_prefix
-  vpc_id             = module.networking.vpc_id
-  private_subnet_ids = module.networking.private_subnet_ids
-  kms_key_arn        = module.iam_metadata.kms_key_arn
-  mwaa_role_arn      = module.iam_metadata.mwaa_role_arn
-  nat_gateway_id     = module.networking.nat_gateway_id
-  force_destroy      = true
+# DEFAULT ORCHESTRATOR: Step Functions (fast startup, no separate deployment step)
+# To switch to MWAA for the YouTube demo: comment out step_functions, uncomment orchestration below.
+module "step_functions" {
+  source = "../../modules/step-functions"
+
+  environment              = var.environment
+  name_prefix              = var.name_prefix
+  bronze_bucket_name       = module.data_lake.bronze_bucket_name
+  athena_results_bucket    = module.data_lake.athena_results_bucket
+  glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket_name
+  kms_key_arn              = module.iam_metadata.kms_key_arn
 }
+
+# YOUTUBE DEMO ORCHESTRATOR: MWAA (full Airflow UI, ~25 min startup)
+# Switch: comment out module "step_functions" above, uncomment this block.
+# Also uncomment mwaa_role_arn output in outputs.tf if needed.
+#
+# module "orchestration" {
+#   source             = "../../modules/orchestration"
+#   environment        = var.environment
+#   name_prefix        = var.name_prefix
+#   vpc_id             = module.networking.vpc_id
+#   private_subnet_ids = module.networking.private_subnet_ids
+#   kms_key_arn        = module.iam_metadata.kms_key_arn
+#   mwaa_role_arn      = module.iam_metadata.mwaa_role_arn
+#   nat_gateway_id     = module.networking.nat_gateway_id
+#   force_destroy      = true
+# }
 
 module "analytics_agent" {
   source = "../../modules/analytics-agent"
