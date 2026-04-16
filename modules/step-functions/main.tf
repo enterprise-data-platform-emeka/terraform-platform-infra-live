@@ -1,13 +1,6 @@
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
-# The Glue role is created by iam-metadata and shared across all Glue jobs.
-# The run_dbt job reuses it — it needs S3, Athena, and Glue catalog access,
-# all of which the existing Glue role already has.
-data "aws_iam_role" "glue" {
-  name = "${var.name_prefix}-${var.environment}-glue-role"
-}
-
 locals {
   silver_jobs = [
     "dim_customer",
@@ -31,7 +24,7 @@ locals {
 
 resource "aws_glue_job" "run_dbt" {
   name     = "${var.name_prefix}-${var.environment}-run-dbt"
-  role_arn = data.aws_iam_role.glue.arn
+  role_arn = var.glue_role_arn
 
   command {
     name            = "pythonshell"

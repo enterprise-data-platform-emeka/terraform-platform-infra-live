@@ -82,6 +82,7 @@ module "step_functions" {
   athena_results_bucket    = module.data_lake.athena_results_bucket
   glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket_name
   kms_key_arn              = module.iam_metadata.kms_key_arn
+  glue_role_arn            = module.iam_metadata.glue_role_arn
 }
 
 # YOUTUBE DEMO ORCHESTRATOR: MWAA (full Airflow UI, ~25 min startup)

@@ -27,3 +27,8 @@ variable "kms_key_arn" {
   description = "KMS key ARN from the iam-metadata module. Used to encrypt Step Functions execution logs."
   type        = string
 }
+
+variable "glue_role_arn" {
+  description = "ARN of the shared Glue IAM role from iam-metadata. Assigned to the run_dbt Glue job."
+  type        = string
+}
