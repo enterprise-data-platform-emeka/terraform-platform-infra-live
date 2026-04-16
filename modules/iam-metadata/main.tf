@@ -78,8 +78,30 @@ data "aws_iam_policy_document" "glue_data_access" {
       "glue:GetDatabase", "glue:GetDatabases", "glue:GetTable", "glue:GetTables",
       "glue:CreateTable", "glue:UpdateTable", "glue:BatchCreatePartition",
       "glue:CreatePartition", "glue:UpdatePartition", "glue:GetPartition", "glue:GetPartitions",
+      "glue:GetTableVersion", "glue:GetTableVersions", "glue:DeleteTableVersion", "glue:BatchDeleteTableVersion",
     ]
     resources = ["*"]
+  }
+
+  statement {
+    sid    = "AthenaQueryExecution"
+    effect = "Allow"
+    actions = [
+      "athena:StartQueryExecution", "athena:StopQueryExecution",
+      "athena:GetQueryExecution", "athena:GetQueryResults",
+      "athena:GetWorkGroup",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "AthenaResultsS3Access"
+    effect = "Allow"
+    actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:GetBucketLocation", "s3:ListBucket"]
+    resources = [
+      "arn:aws:s3:::${var.athena_results_bucket_name}",
+      "arn:aws:s3:::${var.athena_results_bucket_name}/*",
+    ]
   }
 }
 

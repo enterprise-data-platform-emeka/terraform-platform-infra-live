@@ -32,3 +32,8 @@ variable "glue_scripts_bucket_name" {
   description = "Name of the Glue scripts S3 bucket"
   type        = string
 }
+
+variable "athena_results_bucket_name" {
+  description = "Name of the Athena results S3 bucket. Granted to the Glue role so dbt-athena can write query results."
+  type        = string
+}

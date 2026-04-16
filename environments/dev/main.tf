@@ -13,14 +13,15 @@ module "data_lake" {
 }
 
 module "iam_metadata" {
-  source                   = "../../modules/iam-metadata"
-  environment              = var.environment
-  name_prefix              = var.name_prefix
-  bronze_bucket_name       = module.data_lake.bronze_bucket_name
-  silver_bucket_name       = module.data_lake.silver_bucket_name
-  gold_bucket_name         = module.data_lake.gold_bucket_name
-  quarantine_bucket_name   = module.data_lake.quarantine_bucket_name
-  glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket_name
+  source                     = "../../modules/iam-metadata"
+  environment                = var.environment
+  name_prefix                = var.name_prefix
+  bronze_bucket_name         = module.data_lake.bronze_bucket_name
+  silver_bucket_name         = module.data_lake.silver_bucket_name
+  gold_bucket_name           = module.data_lake.gold_bucket_name
+  quarantine_bucket_name     = module.data_lake.quarantine_bucket_name
+  glue_scripts_bucket_name   = module.data_lake.glue_scripts_bucket_name
+  athena_results_bucket_name = module.data_lake.athena_results_bucket
 }
 
 # Ingestion (RDS + DMS) and bastion — commented out after Phase 1 CDC run.
