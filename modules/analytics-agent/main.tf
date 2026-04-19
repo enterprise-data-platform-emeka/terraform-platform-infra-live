@@ -190,9 +190,10 @@ data "aws_iam_policy_document" "task" {
     ]
   }
 
-  # Bronze bucket — two scoped prefixes only.
+  # Bronze bucket — scoped prefixes only.
   # metadata/dbt/*: agent reads dbt catalog.json at startup to enrich schemas.
   # metadata/agent-audit/*: agent writes one JSON audit record per question.
+  # metadata/engineer-log/*: agent writes per-request CSV engineer logs and reads them back.
   statement {
     sid    = "BronzeMetadataRead"
     effect = "Allow"
@@ -203,6 +204,7 @@ data "aws_iam_policy_document" "task" {
     resources = [
       "arn:aws:s3:::${var.bronze_bucket_name}",
       "arn:aws:s3:::${var.bronze_bucket_name}/metadata/dbt/*",
+      "arn:aws:s3:::${var.bronze_bucket_name}/metadata/engineer-log/*",
     ]
   }
 
@@ -212,6 +214,7 @@ data "aws_iam_policy_document" "task" {
     actions = ["s3:PutObject"]
     resources = [
       "arn:aws:s3:::${var.bronze_bucket_name}/metadata/agent-audit/*",
+      "arn:aws:s3:::${var.bronze_bucket_name}/metadata/engineer-log/*",
     ]
   }
 
