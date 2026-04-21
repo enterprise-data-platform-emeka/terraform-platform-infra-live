@@ -28,7 +28,8 @@ terraform-platform-infra-live/
 │   ├── ingestion/                    RDS PostgreSQL database and DMS replication
 │   ├── processing/                   Glue security config and Athena workgroup
 │   ├── serving/                      Redshift Serverless namespace and workgroup
-│   └── orchestration/                MWAA environment, ECS cluster, CloudWatch logs
+│   ├── step-functions/               Step Functions state machine (default daily orchestrator)
+│   └── orchestration/                MWAA environment (YouTube demo mode)
 │
 └── environments/
     ├── dev/
@@ -54,7 +55,8 @@ terraform-platform-infra-live/
 | ingestion | RDS (Relational Database Service) PostgreSQL database, DMS (Database Migration Service) replication instance, DMS source and target endpoints, DMS replication task |
 | processing | Glue security configuration, Glue VPC connection, Athena workgroup |
 | serving | Redshift Serverless namespace and workgroup |
-| orchestration | MWAA (Amazon Managed Workflows for Apache Airflow) environment, ECS (Elastic Container Service) cluster, DAG bucket, CloudWatch log groups |
+| step-functions | AWS Step Functions (SFN) state machine for daily pipeline execution, IAM role for Step Functions, `run_dbt` Glue Python Shell job, CloudWatch log group. This is the **default orchestrator** — enabled in all environments. |
+| orchestration | MWAA (Amazon Managed Workflows for Apache Airflow) environment, ECS (Elastic Container Service) cluster, DAG bucket, CloudWatch log groups. **YouTube demo mode only** — comment out `step_functions` and uncomment `orchestration` in `environments/dev/main.tf` to switch. |
 
 ---
 
@@ -69,7 +71,8 @@ networking
               ├── ingestion
               ├── processing
               ├── serving
-              └── orchestration
+              ├── step-functions   ← default (enabled)
+              └── orchestration    ← MWAA demo mode (commented out by default)
 ```
 
 **Why this order:**
@@ -243,6 +246,7 @@ This method goes directly to each service's console for the richest view of each
 | Glue | Glue → Databases | `edp_dev_bronze`, `edp_dev_silver`, `edp_dev_gold` |
 | Athena | Athena → Workgroups | `edp-dev-workgroup` showing `ENABLED` |
 | Redshift Serverless | Redshift Serverless → Workgroups | `edp-dev-workgroup` and `edp-dev-namespace` |
+| Step Functions | Step Functions → State machines | `edp-dev-pipeline` showing Active status |
 | SSM (Systems Manager) | Systems Manager → Parameter Store | `/edp/dev/rds/db_password` and `/edp/dev/redshift/admin_password` as `SecureString` |
 
 **When to use this method:** when verifying a specific resource in detail, troubleshooting a connection issue, or checking DMS task status and replication lag.
@@ -308,8 +312,13 @@ After `make apply dev` completes successfully, verify the following in the AWS c
 - Namespace `edp-dev-namespace` exists
 - Workgroup `edp-dev-workgroup` exists
 
-**MWAA (Amazon Managed Workflows for Apache Airflow) Console:**
-- Environment `edp-dev-mwaa` is in `Available` state
+**Step Functions Console (default orchestrator):**
+- State machine `edp-dev-pipeline` exists and is in `Active` status
+- IAM role `edp-dev-sfn-role` exists
+- Glue job `edp-dev-run-dbt` exists
+
+**MWAA (Amazon Managed Workflows for Apache Airflow) Console (demo mode only):**
+- Environment `edp-dev-mwaa` is in `Available` state (only if `module "orchestration"` is enabled)
 
 ---
 
