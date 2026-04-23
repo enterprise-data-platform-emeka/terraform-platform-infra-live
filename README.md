@@ -58,12 +58,12 @@ flowchart LR
         AA["analytics-agent\nECR image registry\nECS Fargate cluster\nApplication Load Balancer\nFastAPI + Streamlit"]
     end
 
-    subgraph demo["Demo mode (replaces step-functions)"]
+    subgraph mwaa["MWAA mode (Airflow UI alternative)"]
         ORCH["orchestration\nMWAA environment\nAirflow webserver\nDAGs S3 bucket"]
     end
 
     IAM --> ING & PROC & SFN & SERV & AA
-    IAM -.->|"swap for YouTube demo"| ORCH
+    IAM -.->|"swap for MWAA Airflow UI"| ORCH
 ```
 
 ---
@@ -85,7 +85,7 @@ terraform-platform-infra-live/
 │   ├── processing/                   Glue security config and Athena workgroup
 │   ├── serving/                      Redshift Serverless namespace and workgroup
 │   ├── step-functions/               Step Functions state machine (default daily orchestrator)
-│   ├── orchestration/                MWAA environment (YouTube demo mode)
+│   ├── orchestration/                MWAA environment (Airflow UI alternative)
 │   └── analytics-agent/              ECR, ECS Fargate cluster, ALB for the Analytics Agent
 │
 └── environments/
@@ -113,43 +113,78 @@ terraform-platform-infra-live/
 | processing | Glue security configuration (KMS encryption for bookmarks and logs), Glue VPC connection, Athena workgroup |
 | serving | Redshift Serverless namespace and workgroup |
 | step-functions | AWS Step Functions state machine for daily pipeline execution, IAM role for Step Functions, `run_dbt` Glue Python Shell job, CloudWatch log group. **Default orchestrator** — enabled in all environments. |
-| orchestration | MWAA (Amazon Managed Workflows for Apache Airflow) environment, DAGs S3 bucket, CloudWatch log groups. **YouTube demo mode only** — comment out `step_functions` and uncomment `orchestration` in `environments/dev/main.tf` to switch. |
+| orchestration | MWAA (Amazon Managed Workflows for Apache Airflow) environment, DAGs S3 bucket, CloudWatch log groups. **Optional Airflow UI orchestrator** — runs the same pipeline as Step Functions with a visual task graph. Comment out `step_functions` and uncomment `orchestration` in `environments/dev/main.tf` to switch. |
 | analytics-agent | ECR (Elastic Container Registry) image repository, ECS (Elastic Container Service) Fargate cluster, ECS task definition and service, ALB (Application Load Balancer) with listeners for FastAPI (port 80) and Streamlit (port 8501), IAM task execution role and task role, CloudWatch log group |
 
 ---
 
 ## Module dependency order
 
-The modules must be applied in this order. Each module uses outputs from the ones above it as inputs.
+The modules must be applied in this order. The diagram below shows every actual output-to-input connection — edge labels are the exact Terraform output names. Solid lines are always-on modules; dashed lines are modules commented out by default.
 
 ```mermaid
 flowchart TD
-    NET["networking\nVPC, subnets, NAT gateway, S3 VPC endpoint\nNo dependencies — apply this first"]
-    DL["data-lake\n5 S3 buckets\nNeeds: VPC endpoint from networking"]
-    IAM["iam-metadata\nKMS key, IAM roles, Glue Catalog databases\nNeeds: bucket names from data-lake"]
+    NET["networking\nvpc_id · private_subnet_ids\npublic_subnet_ids · nat_gateway_id"]
+    DL["data-lake\nbronze · silver · gold · quarantine\nathena-results · glue-scripts"]
+    IAM["iam-metadata\nkms_key_arn · glue_role_arn\nmwaa_role_arn · redshift_role_arn\ndms_s3_role_arn\nglue_catalog_database_gold/silver"]
 
-    ING["ingestion\nRDS PostgreSQL, DMS replication\nNeeds: VPC, subnets, KMS key, IAM roles"]
-    PROC["processing\nGlue security config, Athena workgroup\nNeeds: VPC, KMS key"]
-    SERV["serving\nRedshift Serverless\nNeeds: VPC, subnets, KMS key, IAM roles"]
-    SFN["step-functions\nStep Functions state machine\nNeeds: S3 bucket names, IAM roles"]
-    AA["analytics-agent\nECR, ECS Fargate, ALB\nNeeds: VPC, subnets, KMS key, bucket names"]
-    ORCH["orchestration\nMWAA environment\nNeeds: VPC, subnets, KMS key, IAM roles\n(demo mode only)"]
+    PROC["processing"]
+    SFN["step-functions"]
+    AA["analytics-agent"]
+    ING["ingestion\n(off by default)"]
+    SERV["serving\n(off by default)"]
+    ORCH["orchestration\n(MWAA mode only)"]
 
-    NET --> DL --> IAM
-    IAM --> ING
-    IAM --> PROC
-    IAM --> SERV
-    IAM --> SFN
-    IAM --> AA
-    IAM -.->|"demo mode only"| ORCH
+    NET -->|"vpc_id\nprivate_subnet_ids"| PROC
+    NET -->|"vpc_id\nprivate_subnet_ids\npublic_subnet_ids"| AA
+    NET -.->|"vpc_id\nprivate_subnet_ids"| ING
+    NET -.->|"vpc_id\nprivate_subnet_ids"| SERV
+    NET -.->|"vpc_id\nprivate_subnet_ids\nnat_gateway_id"| ORCH
+
+    DL -->|"bronze · silver · gold\nquarantine · athena-results\nglue-scripts"| IAM
+    DL -->|"bronze_bucket_name\nathena_results_bucket\nglue_scripts_bucket_name"| SFN
+    DL -->|"silver_bucket_name\nathena_results_bucket"| PROC
+    DL -->|"bronze · silver · gold\nathena_results_bucket"| AA
+    DL -.->|"bronze_bucket_name"| ING
+
+    IAM -->|"kms_key_arn"| PROC
+    IAM -->|"kms_key_arn\nglue_role_arn"| SFN
+    IAM -->|"kms_key_arn\nglue_catalog_database_gold\nglue_catalog_database_silver"| AA
+    IAM -.->|"kms_key_arn\ndms_s3_role_arn"| ING
+    IAM -.->|"kms_key_arn\nredshift_role_arn"| SERV
+    IAM -.->|"kms_key_arn\nmwaa_role_arn"| ORCH
 ```
 
 **Why this order:**
 
-- `networking` has no dependencies. It creates the VPC (Virtual Private Cloud) and subnets that every other module runs inside.
-- `data-lake` creates the S3 buckets. It needs networking to exist (for the S3 VPC endpoint) and its bucket names are passed as inputs to modules below.
-- `iam-metadata` creates IAM roles using the bucket names from `data-lake`. The roles grant Glue, DMS, MWAA, and Redshift access to specific buckets. It also creates the KMS encryption key used by everything below.
-- `ingestion`, `processing`, `serving`, `step-functions`, `analytics-agent`, and `orchestration` all need the VPC ID, subnet IDs, KMS key ARN, and IAM role ARNs from the modules above. They can be applied in any order relative to each other once `iam-metadata` exists.
+- `networking` has no dependencies. It creates the VPC (Virtual Private Cloud), subnets, and NAT Gateway that every other module runs inside.
+- `data-lake` creates the 6 S3 buckets. All six bucket names are passed directly to `iam-metadata` so IAM roles can be scoped to specific bucket ARNs. Several bucket names are also passed directly to leaf modules.
+- `iam-metadata` creates IAM roles using the bucket names from `data-lake`. The roles grant Glue, DMS, MWAA, and Redshift access to specific buckets. It also creates the KMS (Key Management Service) encryption key used by everything below.
+- `processing`, `step-functions`, and `analytics-agent` each receive outputs from all three foundation modules: VPC/subnet IDs from `networking`, specific bucket names from `data-lake`, and `kms_key_arn` plus role ARNs from `iam-metadata`. They can be applied in any order relative to each other once `iam-metadata` exists.
+
+**Output reference — what each module's outputs feed into:**
+
+| Output | Source module | Consumed by |
+|---|---|---|
+| `vpc_id` | networking | processing, analytics-agent, (ingestion, serving, orchestration) |
+| `private_subnet_ids` | networking | processing, analytics-agent, (ingestion, serving, orchestration) |
+| `public_subnet_ids` | networking | analytics-agent |
+| `nat_gateway_id` | networking | (orchestration) |
+| `bronze_bucket_name` | data-lake | iam-metadata, step-functions, analytics-agent, (ingestion) |
+| `silver_bucket_name` | data-lake | iam-metadata, processing, analytics-agent |
+| `gold_bucket_name` | data-lake | iam-metadata, analytics-agent |
+| `quarantine_bucket_name` | data-lake | iam-metadata |
+| `athena_results_bucket` | data-lake | iam-metadata, processing, step-functions, analytics-agent |
+| `glue_scripts_bucket_name` | data-lake | iam-metadata, step-functions |
+| `kms_key_arn` | iam-metadata | processing, step-functions, analytics-agent, (ingestion, serving, orchestration) |
+| `glue_role_arn` | iam-metadata | step-functions |
+| `dms_s3_role_arn` | iam-metadata | (ingestion) |
+| `redshift_role_arn` | iam-metadata | (serving) |
+| `mwaa_role_arn` | iam-metadata | (orchestration) |
+| `glue_catalog_database_gold` | iam-metadata | analytics-agent |
+| `glue_catalog_database_silver` | iam-metadata | analytics-agent |
+
+Entries in parentheses are for modules that are commented out by default in `environments/dev/main.tf`.
 
 ---
 
@@ -163,11 +198,11 @@ Not every module runs in every session. `environments/dev/main.tf` uses comments
 | data-lake | active | Always on |
 | iam-metadata | active | Always on |
 | processing | active | Always on |
-| step-functions | active | Comment out only when switching to MWAA demo mode |
+| step-functions | active | Comment out only when switching to MWAA mode |
 | analytics-agent | active | Always on |
 | ingestion | **commented out** | Uncomment when running the CDC simulator against AWS RDS |
 | serving | **commented out** | Uncomment when querying Gold data directly from Redshift |
-| orchestration | **commented out** | Uncomment (and comment out step-functions) for the YouTube demo |
+| orchestration | **commented out** | Uncomment (and comment out step-functions) to use MWAA Airflow orchestration with a visual task graph |
 
 The reason `ingestion` is commented out by default: the RDS instance and DMS task cost money to run ($0.02/hr for RDS, $0.10/hr for DMS). After the initial CDC (Change Data Capture) run that populated Bronze S3, the Bronze data persists between sessions. I only uncomment `ingestion` when I need to run the CDC simulator again.
 

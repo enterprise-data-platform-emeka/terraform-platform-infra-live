@@ -73,7 +73,7 @@ module "processing" {
 # }
 
 # DEFAULT ORCHESTRATOR: Step Functions (fast startup, no separate deployment step)
-# To switch to MWAA for the YouTube demo: comment out step_functions, uncomment orchestration below.
+# To switch to MWAA (full Airflow UI with visual task graph): comment out step_functions, uncomment orchestration below.
 module "step_functions" {
   source = "../../modules/step-functions"
 
@@ -86,7 +86,7 @@ module "step_functions" {
   glue_role_arn            = module.iam_metadata.glue_role_arn
 }
 
-# YOUTUBE DEMO ORCHESTRATOR: MWAA (full Airflow UI, ~25 min startup)
+# MWAA ORCHESTRATOR: Full Airflow environment with visual task graph (~25 min startup)
 # Switch: comment out module "step_functions" above, uncomment this block.
 # Also uncomment mwaa_role_arn output in outputs.tf if needed.
 #
