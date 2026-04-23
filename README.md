@@ -6,9 +6,65 @@ This repository is part of the [Enterprise Data Platform](https://github.com/ent
 
 ---
 
-This repository contains all the AWS (Amazon Web Services) infrastructure for the Enterprise Data Platform, written as Terraform code. If the `terraform-bootstrap` repository creates the filing cabinet (remote state storage), this repository builds everything inside it: the private network, the data storage buckets, the encryption keys, the permissions, the databases, the data processing environment, the data warehouse, and the pipeline orchestration system.
+This repository contains all the AWS (Amazon Web Services) infrastructure for the Enterprise Data Platform, written as Terraform code. If the `terraform-bootstrap` repository creates the filing cabinet (remote state storage), this repository builds everything inside it: the private network, the data storage buckets, the encryption keys, the permissions, the databases, the data processing environment, the data warehouse, the pipeline orchestration system, and the serving layer for the Analytics Agent.
 
 Every AWS resource this platform needs is defined here. Nothing is created manually in the AWS console.
+
+---
+
+## Contents
+
+- [How it all fits together](#how-it-all-fits-together)
+- [What lives in this repository](#what-lives-in-this-repository)
+- [The nine modules and what they create](#the-nine-modules-and-what-they-create)
+- [Module dependency order](#module-dependency-order)
+- [Which modules are active by default in dev](#which-modules-are-active-by-default-in-dev)
+- [Network topology](#network-topology)
+- [Using the Makefile](#using-the-makefile)
+- [Sensitive variables](#sensitive-variables)
+- [Important deployment notes](#important-deployment-notes)
+- [Inspecting created resources in the AWS console](#inspecting-created-resources-in-the-aws-console)
+- [Infrastructure screenshots](#infrastructure-screenshots)
+- [Full validation checklist](#full-validation-checklist)
+- [Environments](#environments)
+- [CI/CD](#cicd)
+- [Module READMEs](#module-readmes)
+
+---
+
+## How it all fits together
+
+Nine Terraform modules build the complete platform in dependency order. The diagram below shows how each module relates to the others and what part of the data pipeline it enables.
+
+```mermaid
+flowchart LR
+    subgraph foundation["Foundation (must exist first)"]
+        direction TB
+        NET["networking\nVPC, subnets, NAT gateway\nInternet Gateway, S3 endpoint"]
+        DL["data-lake\n5 S3 buckets:\nBronze, Silver, Gold\nQuarantine, Athena results"]
+        IAM["iam-metadata\nKMS encryption key\nIAM roles for every service\nGlue Catalog databases"]
+        NET --> DL --> IAM
+    end
+
+    subgraph pipeline["Pipeline infrastructure (all depend on foundation)"]
+        direction TB
+        ING["ingestion\nRDS PostgreSQL source database\nDMS replication instance and task\nCDC stream to Bronze S3"]
+        PROC["processing\nGlue security configuration\nGlue VPC connection\nAthena workgroup"]
+        SFN["step-functions\nStep Functions state machine\nedp-dev-pipeline\ndefault daily orchestrator"]
+        SERV["serving\nRedshift Serverless\nnamespace and workgroup"]
+    end
+
+    subgraph agent["Analytics layer"]
+        AA["analytics-agent\nECR image registry\nECS Fargate cluster\nApplication Load Balancer\nFastAPI + Streamlit"]
+    end
+
+    subgraph demo["Demo mode (replaces step-functions)"]
+        ORCH["orchestration\nMWAA environment\nAirflow webserver\nDAGs S3 bucket"]
+    end
+
+    IAM --> ING & PROC & SFN & SERV & AA
+    IAM -.->|"swap for YouTube demo"| ORCH
+```
 
 ---
 
@@ -29,7 +85,8 @@ terraform-platform-infra-live/
 │   ├── processing/                   Glue security config and Athena workgroup
 │   ├── serving/                      Redshift Serverless namespace and workgroup
 │   ├── step-functions/               Step Functions state machine (default daily orchestrator)
-│   └── orchestration/                MWAA environment (YouTube demo mode)
+│   ├── orchestration/                MWAA environment (YouTube demo mode)
+│   └── analytics-agent/              ECR, ECS Fargate cluster, ALB for the Analytics Agent
 │
 └── environments/
     ├── dev/
@@ -45,42 +102,113 @@ terraform-platform-infra-live/
 
 ---
 
-## The seven modules and what they create
+## The nine modules and what they create
 
 | Module | Resources created |
 |---|---|
-| networking | VPC (Virtual Private Cloud), public subnet, two private subnets, Internet Gateway, route tables, S3 VPC Endpoint |
+| networking | VPC (Virtual Private Cloud), public subnet, two private subnets, Internet Gateway, NAT (Network Address Translation) Gateway, route tables, S3 VPC Endpoint |
 | data-lake | Five S3 (Simple Storage Service) buckets: Bronze, Silver, Gold, Quarantine, Athena results |
 | iam-metadata | KMS (Key Management Service) encryption key, IAM (Identity and Access Management) roles for Glue/MWAA/Redshift/DMS, three Glue Catalog databases. Note: the GitHub Actions OIDC provider and deploy roles live in `terraform-bootstrap`, not here. |
 | ingestion | RDS (Relational Database Service) PostgreSQL database, DMS (Database Migration Service) replication instance, DMS source and target endpoints, DMS replication task |
-| processing | Glue security configuration, Glue VPC connection, Athena workgroup |
+| processing | Glue security configuration (KMS encryption for bookmarks and logs), Glue VPC connection, Athena workgroup |
 | serving | Redshift Serverless namespace and workgroup |
-| step-functions | AWS Step Functions (SFN) state machine for daily pipeline execution, IAM role for Step Functions, `run_dbt` Glue Python Shell job, CloudWatch log group. This is the **default orchestrator** — enabled in all environments. |
-| orchestration | MWAA (Amazon Managed Workflows for Apache Airflow) environment, ECS (Elastic Container Service) cluster, DAG bucket, CloudWatch log groups. **YouTube demo mode only** — comment out `step_functions` and uncomment `orchestration` in `environments/dev/main.tf` to switch. |
+| step-functions | AWS Step Functions state machine for daily pipeline execution, IAM role for Step Functions, `run_dbt` Glue Python Shell job, CloudWatch log group. **Default orchestrator** — enabled in all environments. |
+| orchestration | MWAA (Amazon Managed Workflows for Apache Airflow) environment, DAGs S3 bucket, CloudWatch log groups. **YouTube demo mode only** — comment out `step_functions` and uncomment `orchestration` in `environments/dev/main.tf` to switch. |
+| analytics-agent | ECR (Elastic Container Registry) image repository, ECS (Elastic Container Service) Fargate cluster, ECS task definition and service, ALB (Application Load Balancer) with listeners for FastAPI (port 80) and Streamlit (port 8501), IAM task execution role and task role, CloudWatch log group |
 
 ---
 
 ## Module dependency order
 
-The modules depend on each other in a strict order. I cannot deploy a module until everything it depends on already exists.
+The modules must be applied in this order. Each module uses outputs from the ones above it as inputs.
 
-```
-networking
-  └── data-lake
-        └── iam-metadata
-              ├── ingestion
-              ├── processing
-              ├── serving
-              ├── step-functions   ← default (enabled)
-              └── orchestration    ← MWAA demo mode (commented out by default)
+```mermaid
+flowchart TD
+    NET["networking\nVPC, subnets, NAT gateway, S3 VPC endpoint\nNo dependencies — apply this first"]
+    DL["data-lake\n5 S3 buckets\nNeeds: VPC endpoint from networking"]
+    IAM["iam-metadata\nKMS key, IAM roles, Glue Catalog databases\nNeeds: bucket names from data-lake"]
+
+    ING["ingestion\nRDS PostgreSQL, DMS replication\nNeeds: VPC, subnets, KMS key, IAM roles"]
+    PROC["processing\nGlue security config, Athena workgroup\nNeeds: VPC, KMS key"]
+    SERV["serving\nRedshift Serverless\nNeeds: VPC, subnets, KMS key, IAM roles"]
+    SFN["step-functions\nStep Functions state machine\nNeeds: S3 bucket names, IAM roles"]
+    AA["analytics-agent\nECR, ECS Fargate, ALB\nNeeds: VPC, subnets, KMS key, bucket names"]
+    ORCH["orchestration\nMWAA environment\nNeeds: VPC, subnets, KMS key, IAM roles\n(demo mode only)"]
+
+    NET --> DL --> IAM
+    IAM --> ING
+    IAM --> PROC
+    IAM --> SERV
+    IAM --> SFN
+    IAM --> AA
+    IAM -.->|"demo mode only"| ORCH
 ```
 
 **Why this order:**
 
-- `networking` has no dependencies. It creates the VPC and subnets. Everything else runs inside this network.
-- `data-lake` creates the S3 buckets. It needs networking to exist (for the S3 VPC endpoint association) and its bucket names are passed as inputs to modules below.
+- `networking` has no dependencies. It creates the VPC (Virtual Private Cloud) and subnets that every other module runs inside.
+- `data-lake` creates the S3 buckets. It needs networking to exist (for the S3 VPC endpoint) and its bucket names are passed as inputs to modules below.
 - `iam-metadata` creates IAM roles using the bucket names from `data-lake`. The roles grant Glue, DMS, MWAA, and Redshift access to specific buckets. It also creates the KMS encryption key used by everything below.
-- `ingestion`, `processing`, `serving`, and `orchestration` all need the VPC ID, subnet IDs, KMS key ARN, and IAM role ARNs from the modules above. They can be applied in any order relative to each other, but only after `iam-metadata` exists.
+- `ingestion`, `processing`, `serving`, `step-functions`, `analytics-agent`, and `orchestration` all need the VPC ID, subnet IDs, KMS key ARN, and IAM role ARNs from the modules above. They can be applied in any order relative to each other once `iam-metadata` exists.
+
+---
+
+## Which modules are active by default in dev
+
+Not every module runs in every session. `environments/dev/main.tf` uses comments to switch between configurations depending on what's being tested.
+
+| Module | Default state in dev | When to change it |
+|---|---|---|
+| networking | active | Always on |
+| data-lake | active | Always on |
+| iam-metadata | active | Always on |
+| processing | active | Always on |
+| step-functions | active | Comment out only when switching to MWAA demo mode |
+| analytics-agent | active | Always on |
+| ingestion | **commented out** | Uncomment when running the CDC simulator against AWS RDS |
+| serving | **commented out** | Uncomment when querying Gold data directly from Redshift |
+| orchestration | **commented out** | Uncomment (and comment out step-functions) for the YouTube demo |
+
+The reason `ingestion` is commented out by default: the RDS instance and DMS task cost money to run ($0.02/hr for RDS, $0.10/hr for DMS). After the initial CDC (Change Data Capture) run that populated Bronze S3, the Bronze data persists between sessions. I only uncomment `ingestion` when I need to run the CDC simulator again.
+
+---
+
+## Network topology
+
+The platform uses a standard VPC isolation pattern. Resources that should be reachable from the internet live in the public subnet. Everything else lives in private subnets with no inbound internet route.
+
+```mermaid
+flowchart TB
+    INTERNET(["Internet"])
+
+    subgraph vpc["VPC: edp-dev-vpc  10.10.0.0/16  eu-central-1"]
+        subgraph pub["Public subnet  10.10.1.0/24\nHas a route to the Internet Gateway"]
+            ALB["Application Load Balancer\nport 80 to FastAPI\nport 8501 to Streamlit\nThis is the only entry point for stakeholders"]
+            NAT["NAT Gateway\nPrivate resources use this for\noutbound-only internet access\n(downloading packages, calling APIs)"]
+            BASTION["Bastion EC2\nUncommented when running the CDC simulator.\nNo SSH key needed. SSM tunnels through this\nto reach RDS without opening any firewall port."]
+        end
+
+        subgraph priv["Private subnets  10.10.2.0/24 and 10.10.3.0/24\nNo internet route. Nothing can reach these from outside."]
+            RDS["RDS PostgreSQL\nReachable only via the SSM bastion tunnel\nor from DMS inside the same VPC"]
+            ECS["ECS Fargate\nAnalytics Agent container\nReceives traffic from the ALB only"]
+            DMS["DMS replication instance\nReads from RDS WAL stream\nWrites CDC events to Bronze S3 via NAT"]
+        end
+
+        S3EP["S3 VPC Endpoint\nGlue, ECS, and DMS talk to S3\nover AWS private network, not the internet"]
+    end
+
+    INTERNET -->|"stakeholder opens ALB DNS address"| ALB
+    ALB --> ECS
+    INTERNET -.->|"SSM session — no open port, no SSH key"| BASTION
+    BASTION -.->|"localhost:5433 port-forward to RDS"| RDS
+    RDS --> DMS
+    ECS --> S3EP
+    DMS --> S3EP
+    DMS & ECS -->|"outbound calls via NAT\ne.g. Claude API"| NAT
+    NAT --> INTERNET
+```
+
+**Why private subnets?** RDS holds the source OLTP (Online Transaction Processing) data. Putting it in a private subnet means it has no internet-facing address. The only way to reach it is through the bastion, which requires AWS SSO (Single Sign-On) credentials — no static passwords or open ports.
 
 ---
 
@@ -95,7 +223,7 @@ I use a Makefile to avoid typing long Terraform commands with directory paths ev
 | `make apply dev` | `cd environments/dev && terraform apply` |
 | `make destroy dev` | `cd environments/dev && terraform destroy` |
 
-Replace `dev` with `staging` or `prod` for other environments. Always log in to AWS SSO (Single Sign-On) before running any of these.
+Replace `dev` with `staging` or `prod` for other environments. Always log in to AWS SSO before running any of these.
 
 ```bash
 aws sso login --profile dev-admin
@@ -155,14 +283,14 @@ terraform apply -var-file="secret.tfvars"
 
 The DMS (Database Migration Service) service requires two IAM roles with fixed names to exist before I can create a replication instance:
 
-- `dms-vpc-role` - allows DMS to create network interfaces in the VPC
-- `dms-cloudwatch-logs-role` - allows DMS to write logs to CloudWatch
+- `dms-vpc-role` — allows DMS to create network interfaces in the VPC
+- `dms-cloudwatch-logs-role` — allows DMS to write logs to CloudWatch
 
 These roles are created by the `iam-metadata` module. If I try to apply `ingestion` before `iam-metadata`, the DMS replication instance creation will fail.
 
 ### 2. The two fixed DMS role names
 
-AWS DMS (Database Migration Service) looks for exactly these role names in every account. The names cannot be changed. If these roles already exist in the AWS account from a previous deployment, Terraform will fail when trying to create them again because they already exist.
+AWS DMS looks for exactly these role names in every account. The names cannot be changed. If these roles already exist in the AWS account from a previous deployment, Terraform will fail when trying to create them again because they already exist.
 
 In that case, import them into Terraform state:
 
@@ -175,7 +303,7 @@ After importing, Terraform knows these resources already exist and will manage t
 
 ### 3. RDS reboot after first apply
 
-The RDS (Relational Database Service) PostgreSQL instance needs logical replication mode enabled for CDC (Change Data Capture) to work. This is set in the parameter group, but the parameter requires a database restart to take effect.
+The RDS PostgreSQL instance needs logical replication mode enabled for CDC to work. This is set in the parameter group, but the parameter requires a database restart to take effect.
 
 After the first `terraform apply`, reboot the RDS instance:
 
@@ -238,15 +366,18 @@ This method goes directly to each service's console for the richest view of each
 |---|---|---|
 | VPC (Virtual Private Cloud) | VPC → Your VPCs | `edp-dev-vpc`, 3 subnets, S3 VPC Endpoint on private route table |
 | S3 (Simple Storage Service) | S3 → Buckets | 5 buckets with `edp-dev-` prefix, encryption and versioning enabled on each |
-| RDS (Relational Database Service) | RDS → Databases | `edp-dev-source-db` showing status `available` |
-| DMS (Database Migration Service) | DMS → Replication instances / Tasks | `edp-dev-dms-ri` showing `available`, `edp-dev-cdc-task` visible |
-| EC2 (Elastic Compute Cloud) | EC2 → Instances | `edp-dev-bastion` showing `running` |
+| RDS (Relational Database Service) | RDS → Databases | `edp-dev-source-db` showing status `available` (only if ingestion module is enabled) |
+| DMS (Database Migration Service) | DMS → Replication instances / Tasks | `edp-dev-dms-ri` showing `available`, `edp-dev-cdc-task` visible (only if ingestion module is enabled) |
+| EC2 (Elastic Compute Cloud) | EC2 → Instances | `edp-dev-bastion` showing `running` (only if ingestion module is enabled) |
 | KMS (Key Management Service) | KMS → Customer managed keys | Key with alias `alias/edp-dev-platform` |
 | IAM (Identity and Access Management) | IAM → Roles, filter by `edp` | All service roles for Glue, MWAA, Redshift, DMS |
 | Glue | Glue → Databases | `edp_dev_bronze`, `edp_dev_silver`, `edp_dev_gold` |
 | Athena | Athena → Workgroups | `edp-dev-workgroup` showing `ENABLED` |
-| Redshift Serverless | Redshift Serverless → Workgroups | `edp-dev-workgroup` and `edp-dev-namespace` |
+| Redshift Serverless | Redshift Serverless → Workgroups | `edp-dev-workgroup` and `edp-dev-namespace` (only if serving module is enabled) |
 | Step Functions | Step Functions → State machines | `edp-dev-pipeline` showing Active status |
+| ECR (Elastic Container Registry) | ECR → Repositories | `edp-dev-analytics-agent` repository |
+| ECS (Elastic Container Service) | ECS → Clusters | `edp-dev-agent-cluster` with one running Fargate service |
+| EC2 → Load Balancers | EC2 → Load Balancers | `edp-dev-agent-alb` in Active state |
 | SSM (Systems Manager) | Systems Manager → Parameter Store | `/edp/dev/rds/db_password` and `/edp/dev/redshift/admin_password` as `SecureString` |
 
 **When to use this method:** when verifying a specific resource in detail, troubleshooting a connection issue, or checking DMS task status and replication lag.
@@ -269,7 +400,7 @@ After `make apply dev` completes successfully, verify the following in the AWS c
 
 **VPC (Virtual Private Cloud) Console:**
 - VPC `edp-dev-vpc` exists with CIDR (Classless Inter-Domain Routing) `10.10.0.0/16`
-- Three subnets exist: one public, two private (in different AZs - Availability Zones)
+- Three subnets exist: one public, two private (in different AZs — Availability Zones)
 - Private route table has no internet route
 - S3 VPC Endpoint is attached to the private route table
 
@@ -293,12 +424,12 @@ After `make apply dev` completes successfully, verify the following in the AWS c
 **Glue Console:**
 - Three databases: `edp_dev_bronze`, `edp_dev_silver`, `edp_dev_gold`
 
-**RDS (Relational Database Service) Console:**
+**RDS (Relational Database Service) Console (only if ingestion module is enabled):**
 - Instance `edp-dev-source-db` is in `available` state
 - Storage encrypted: Yes
 - Parameter group: `edp-dev-postgres16`
 
-**DMS (Database Migration Service) Console:**
+**DMS (Database Migration Service) Console (only if ingestion module is enabled):**
 - Replication instance `edp-dev-dms-ri` is `available`
 - Source endpoint test connection: successful
 - Target endpoint test connection: successful
@@ -308,14 +439,26 @@ After `make apply dev` completes successfully, verify the following in the AWS c
 - Parameter `/edp/dev/rds/db_password` exists as a `SecureString`
 - Parameter `/edp/dev/redshift/admin_password` exists as a `SecureString`
 
-**Redshift Console:**
+**Redshift Console (only if serving module is enabled):**
 - Namespace `edp-dev-namespace` exists
 - Workgroup `edp-dev-workgroup` exists
 
-**Step Functions Console (default orchestrator):**
+**Step Functions Console:**
 - State machine `edp-dev-pipeline` exists and is in `Active` status
 - IAM role `edp-dev-sfn-role` exists
 - Glue job `edp-dev-run-dbt` exists
+
+**ECR (Elastic Container Registry) Console:**
+- Repository `edp-dev-analytics-agent` exists
+
+**ECS (Elastic Container Service) Console:**
+- Cluster `edp-dev-agent-cluster` exists
+- Service running with Fargate launch type
+- Task definition `edp-dev-analytics-agent` exists
+
+**EC2 Console → Load Balancers:**
+- ALB `edp-dev-agent-alb` is in `active` state
+- Two listeners: port 80 (FastAPI) and port 8501 (Streamlit)
 
 **MWAA (Amazon Managed Workflows for Apache Airflow) Console (demo mode only):**
 - Environment `edp-dev-mwaa` is in `Available` state (only if `module "orchestration"` is enabled)
@@ -328,11 +471,11 @@ Each environment folder calls all the modules with environment-specific values. 
 
 | Environment | AWS profile | VPC CIDR | Active development |
 |---|---|---|---|
-| dev | dev-admin | 10.10.0.0/16 | Yes - this is where I build |
-| staging | staging-admin | 10.20.0.0/16 | Temporary - spin up to validate, then destroy |
-| prod | prod-admin | 10.30.0.0/16 | Temporary - spin up to confirm, then destroy |
+| dev | dev-admin | 10.10.0.0/16 | Yes — this is where I build |
+| staging | staging-admin | 10.20.0.0/16 | Temporary — spin up to validate, then destroy |
+| prod | prod-admin | 10.30.0.0/16 | Temporary — spin up to confirm, then destroy |
 
-I keep dev running when I am actively building. I destroy it between sessions to save costs. MWAA costs about $0.49 per hour and RDS costs about $0.013 per hour, so leaving them running overnight adds up quickly.
+I keep dev running when I am actively building. I destroy it between sessions to save costs. The Step Functions orchestrator and RDS instance together cost about $0.12 per hour, so a 3-hour session costs roughly $0.36 for compute alone.
 
 ---
 
@@ -358,9 +501,7 @@ Runs `terraform plan` against the dev environment using OIDC (OpenID Connect) au
 
 ### On merge to main
 
-The deploy workflow triggers automatically and runs `terraform plan` then `terraform apply` against dev. The plan output is written to the GitHub Actions job summary for audit trail. Authentication uses OIDC (OpenID Connect), no long-lived AWS credentials are stored anywhere. The OIDC provider and `edp-dev-github-actions-role` are created by `terraform-bootstrap` and must exist before this workflow can run.
-
-Before the plan runs, `requirements.txt` and `plugins.zip` are downloaded from the MWAA S3 (Simple Storage Service) bucket. The orchestration module calls `filemd5()` on these files at plan time. Downloading them from S3 ensures the MD5 hash matches what is already in Terraform state, so Terraform sees no change to the MWAA environment and does not trigger a 35-minute MWAA environment update on every infrastructure deploy.
+The deploy workflow triggers automatically and runs `terraform plan` then `terraform apply` against dev. The plan output is written to the GitHub Actions job summary for audit trail. Authentication uses OIDC, with no long-lived AWS credentials stored anywhere. The OIDC provider and `edp-dev-github-actions-role` are created by `terraform-bootstrap` and must exist before this workflow can run.
 
 ### Promotion to staging and prod
 
@@ -377,8 +518,6 @@ Each module has its own documentation file with detailed explanations of every r
 - `modules/iam-metadata/iam-metadata.md`
 - `modules/ingestion/ingestion.md`
 - `modules/serving/serving.md`
-- `modules/processing/` (coming soon)
-- `modules/orchestration/` (coming soon)
 
 ---
 
