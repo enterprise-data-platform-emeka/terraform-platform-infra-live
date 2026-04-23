@@ -39,6 +39,13 @@ on:
         type: choice
         options: [dev, staging, prod]
 
+# One deploy per environment at a time. If a new push arrives while a deploy
+# is running, GitHub cancels the in-progress run. Terraform catches SIGTERM
+# and releases the state lock before the runner exits, preventing stale locks.
+concurrency:
+  group: terraform-deploy-${{ github.ref_name }}-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     name: Deploy to ${{ inputs.environment || 'dev' }}
@@ -78,9 +85,14 @@ jobs:
 
       - name: terraform plan
         id: plan
+        # -detailed-exitcode: 0=no changes, 1=error, 2=changes present.
+        # continue-on-error so exit code 2 doesn't fail the step before we
+        # capture it. The "Fail on plan error" step below re-raises code 1.
+        continue-on-error: true
         run: |
           set -o pipefail
-          terraform plan -no-color -input=false -out=tfplan 2>&1 | tee /tmp/plan.txt
+          terraform plan -detailed-exitcode -no-color -input=false -out=tfplan 2>&1 | tee /tmp/plan.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
         env:
           TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
           TF_VAR_redshift_admin_password: ${{ secrets.TF_VAR_REDSHIFT_ADMIN_PASSWORD }}
@@ -94,10 +106,22 @@ jobs:
           cat /tmp/plan.txt >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Fail on plan error
+        if: steps.plan.outputs.exit_code == '1'
+        run: |
+          echo "Terraform plan failed. See plan output above."
+          exit 1
+
+      - name: No changes — skipping apply
+        if: steps.plan.outputs.exit_code == '0'
+        run: echo "Plan shows no infrastructure changes. Apply skipped."
+
       - name: terraform apply
+        if: steps.plan.outputs.exit_code == '2'
         run: terraform apply -auto-approve -input=false tfplan
 
       - name: Deployment summary
+        if: steps.plan.outputs.exit_code == '2'
         working-directory: ${{ github.workspace }}
         run: |
           echo ""
