@@ -120,39 +120,39 @@ terraform-platform-infra-live/
 
 ## Module dependency order
 
-The modules must be applied in this order. The diagram below shows every actual output-to-input connection — edge labels are the exact Terraform output names. Solid lines are always-on modules; dashed lines are modules commented out by default.
+The modules must be applied in this order. Each module receives specific outputs from the foundation modules above it — the reference table below the diagram lists the exact Terraform output names. Solid lines are always-on modules; dashed lines are commented out by default.
 
 ```mermaid
-flowchart TD
-    NET["networking\nvpc_id · private_subnet_ids\npublic_subnet_ids · nat_gateway_id"]
-    DL["data-lake\nbronze · silver · gold · quarantine\nathena-results · glue-scripts"]
-    IAM["iam-metadata\nkms_key_arn · glue_role_arn\nmwaa_role_arn · redshift_role_arn\ndms_s3_role_arn\nglue_catalog_database_gold/silver"]
+flowchart LR
+    subgraph foundation["Foundation — apply in this order"]
+        direction TB
+        NET["networking\nvpc_id · subnet IDs · nat_gateway_id"]
+        DL["data-lake\n6 S3 bucket names"]
+        IAM["iam-metadata\nkms_key_arn · IAM role ARNs\nGlue Catalog DB names"]
+        NET --> DL --> IAM
+    end
 
-    PROC["processing"]
-    SFN["step-functions"]
-    AA["analytics-agent"]
-    ING["ingestion\n(off by default)"]
-    SERV["serving\n(off by default)"]
-    ORCH["orchestration\n(MWAA mode only)"]
+    subgraph active["Active by default"]
+        direction TB
+        PROC["processing"]
+        SFN["step-functions"]
+        AA["analytics-agent"]
+    end
 
-    NET -->|"vpc_id\nprivate_subnet_ids"| PROC
-    NET -->|"vpc_id\nprivate_subnet_ids\npublic_subnet_ids"| AA
-    NET -.->|"vpc_id\nprivate_subnet_ids"| ING
-    NET -.->|"vpc_id\nprivate_subnet_ids"| SERV
-    NET -.->|"vpc_id\nprivate_subnet_ids\nnat_gateway_id"| ORCH
+    subgraph optional["Off by default"]
+        direction TB
+        ING["ingestion"]
+        SERV["serving"]
+        ORCH["orchestration\n(MWAA mode only)"]
+    end
 
-    DL -->|"bronze · silver · gold\nquarantine · athena-results\nglue-scripts"| IAM
-    DL -->|"bronze_bucket_name\nathena_results_bucket\nglue_scripts_bucket_name"| SFN
-    DL -->|"silver_bucket_name\nathena_results_bucket"| PROC
-    DL -->|"bronze · silver · gold\nathena_results_bucket"| AA
-    DL -.->|"bronze_bucket_name"| ING
+    NET --> PROC & AA
+    DL --> PROC & SFN & AA
+    IAM --> PROC & SFN & AA
 
-    IAM -->|"kms_key_arn"| PROC
-    IAM -->|"kms_key_arn\nglue_role_arn"| SFN
-    IAM -->|"kms_key_arn\nglue_catalog_database_gold\nglue_catalog_database_silver"| AA
-    IAM -.->|"kms_key_arn\ndms_s3_role_arn"| ING
-    IAM -.->|"kms_key_arn\nredshift_role_arn"| SERV
-    IAM -.->|"kms_key_arn\nmwaa_role_arn"| ORCH
+    NET -.-> ING & SERV & ORCH
+    DL -.-> ING
+    IAM -.-> ING & SERV & ORCH
 ```
 
 **Why this order:**
