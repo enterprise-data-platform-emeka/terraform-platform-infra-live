@@ -102,6 +102,18 @@ module "step_functions" {
 #   force_destroy      = true
 # }
 
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  environment        = var.environment
+  name_prefix        = var.name_prefix
+  alert_email        = var.alert_email
+  state_machine_name = module.step_functions.state_machine_name
+  ecs_cluster_name   = module.analytics_agent.ecs_cluster_name
+  ecs_service_name   = module.analytics_agent.ecs_service_name
+  alb_arn_suffix     = module.analytics_agent.alb_arn_suffix
+}
+
 module "analytics_agent" {
   source = "../../modules/analytics-agent"
 

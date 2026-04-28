@@ -42,3 +42,8 @@ output "ecs_service_name" {
   description = "ECS service name — used by CI to trigger rolling deploys."
   value       = aws_ecs_service.agent.name
 }
+
+output "alb_arn_suffix" {
+  description = "ALB ARN suffix for CloudWatch ApplicationELB metric dimensions (e.g. app/edp-dev-agent-alb/abc123)"
+  value       = aws_lb.agent.arn_suffix
+}

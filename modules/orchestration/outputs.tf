@@ -22,3 +22,8 @@ output "mwaa_security_group_id" {
   description = "Security group ID for the MWAA environment"
   value       = aws_security_group.mwaa.id
 }
+
+output "run_dbt_job_name" {
+  description = "Name of the run_dbt Glue Python Shell job — referenced by the MWAA DAG gold_dbt_run task"
+  value       = aws_glue_job.run_dbt.name
+}

@@ -1,3 +1,15 @@
+# ── Monitoring outputs ────────────────────────────────────────────────────────
+
+output "monitoring_dashboard_url" {
+  description = "CloudWatch dashboard URL — open this after apply to watch the pipeline run"
+  value       = module.monitoring.dashboard_url
+}
+
+output "monitoring_sns_topic" {
+  description = "SNS ops-alerts topic ARN — add extra subscribers (Slack, PagerDuty) here"
+  value       = module.monitoring.sns_topic_arn
+}
+
 # ── Analytics Agent outputs ───────────────────────────────────────────────────
 
 output "analytics_agent_ecr_url" {

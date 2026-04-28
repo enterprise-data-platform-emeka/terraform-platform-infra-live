@@ -1,7 +1,8 @@
 module "networking" {
-  source      = "../../modules/networking"
-  environment = var.environment
-  vpc_cidr    = var.vpc_cidr
+  source             = "../../modules/networking"
+  environment        = var.environment
+  vpc_cidr           = var.vpc_cidr
+  create_nat_gateway = true
 }
 
 module "data_lake" {
@@ -12,39 +13,35 @@ module "data_lake" {
 }
 
 module "iam_metadata" {
-  source                   = "../../modules/iam-metadata"
-  environment              = var.environment
-  name_prefix              = var.name_prefix
-  bronze_bucket_name       = module.data_lake.bronze_bucket_name
-  silver_bucket_name       = module.data_lake.silver_bucket_name
-  gold_bucket_name         = module.data_lake.gold_bucket_name
-  quarantine_bucket_name   = module.data_lake.quarantine_bucket_name
-  glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket_name
-
-  github_org                  = var.github_org
-  github_repos                = ["terraform-platform-infra-live", "platform-glue-jobs", "platform-dbt-analytics"]
-  # If staging shares the same AWS account as dev, set this to false to avoid
-  # a duplicate OIDC provider error. If staging is a separate account, keep true.
-  create_github_oidc_provider = true
+  source                     = "../../modules/iam-metadata"
+  environment                = var.environment
+  name_prefix                = var.name_prefix
+  bronze_bucket_name         = module.data_lake.bronze_bucket_name
+  silver_bucket_name         = module.data_lake.silver_bucket_name
+  gold_bucket_name           = module.data_lake.gold_bucket_name
+  quarantine_bucket_name     = module.data_lake.quarantine_bucket_name
+  glue_scripts_bucket_name   = module.data_lake.glue_scripts_bucket_name
+  athena_results_bucket_name = module.data_lake.athena_results_bucket
 }
 
 module "ingestion" {
-  source              = "../../modules/ingestion"
-  environment         = var.environment
-  name_prefix         = var.name_prefix
-  vpc_id              = module.networking.vpc_id
-  private_subnet_ids  = module.networking.private_subnet_ids
-  kms_key_arn         = module.iam_metadata.kms_key_arn
-  bronze_bucket_name  = module.data_lake.bronze_bucket_name
-  dms_s3_role_arn     = module.iam_metadata.dms_s3_role_arn
-  db_password              = var.db_password
-  db_name                  = "ecommerce"
-  db_username              = "postgres"
-  db_instance_class        = var.db_instance_class
-  dms_instance_class       = var.dms_instance_class
-  multi_az                 = var.multi_az
-  deletion_protection      = var.deletion_protection
-  backup_retention_period  = 14
+  source             = "../../modules/ingestion"
+  environment        = var.environment
+  name_prefix        = var.name_prefix
+  vpc_id             = module.networking.vpc_id
+  private_subnet_ids = module.networking.private_subnet_ids
+  kms_key_arn        = module.iam_metadata.kms_key_arn
+  bronze_bucket_name = module.data_lake.bronze_bucket_name
+  dms_s3_role_arn    = module.iam_metadata.dms_s3_role_arn
+
+  db_password             = var.db_password
+  db_name                 = "ecommerce"
+  db_username             = "postgres"
+  db_instance_class       = var.db_instance_class
+  dms_instance_class      = var.dms_instance_class
+  multi_az                = var.multi_az
+  deletion_protection     = var.deletion_protection
+  backup_retention_period = 14
 }
 
 module "processing" {
@@ -70,6 +67,11 @@ module "serving" {
   redshift_admin_password = var.redshift_admin_password
 }
 
+# ORCHESTRATOR: MWAA (full Airflow environment with visual task graph)
+# Staging and prod use MWAA rather than Step Functions so stakeholders have
+# the Airflow UI for monitoring DAG runs and viewing task logs.
+# create_nat_gateway = true in networking is required: MWAA workers need
+# outbound internet access to download PyPI packages at startup.
 module "orchestration" {
   source             = "../../modules/orchestration"
   environment        = var.environment
@@ -78,11 +80,18 @@ module "orchestration" {
   private_subnet_ids = module.networking.private_subnet_ids
   kms_key_arn        = module.iam_metadata.kms_key_arn
   mwaa_role_arn      = module.iam_metadata.mwaa_role_arn
+  nat_gateway_id     = module.networking.nat_gateway_id
   force_destroy      = false
+
+  glue_role_arn            = module.iam_metadata.glue_role_arn
+  glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket_name
+  bronze_bucket_name       = module.data_lake.bronze_bucket_name
+  athena_results_bucket    = module.data_lake.athena_results_bucket
 }
 
 # module "analytics_agent" — enable when deploying the agent to staging.
 # Requires the SSM parameter /edp/staging/anthropic_api_key to be created first.
+# Also uncomment the monitoring module below when this is enabled.
 #
 # module "analytics_agent" {
 #   source = "../../modules/analytics-agent"
@@ -91,6 +100,7 @@ module "orchestration" {
 #   name_prefix        = var.name_prefix
 #   vpc_id             = module.networking.vpc_id
 #   private_subnet_ids = module.networking.private_subnet_ids
+#   public_subnet_ids  = module.networking.public_subnet_ids
 #   bronze_bucket_name    = module.data_lake.bronze_bucket_name
 #   silver_bucket_name    = module.data_lake.silver_bucket_name
 #   gold_bucket_name      = module.data_lake.gold_bucket_name
@@ -98,4 +108,19 @@ module "orchestration" {
 #   kms_key_arn           = module.iam_metadata.kms_key_arn
 #   glue_gold_database    = module.iam_metadata.glue_catalog_database_gold
 #   glue_silver_database  = module.iam_metadata.glue_catalog_database_silver
+# }
+
+# module "monitoring" — enable together with analytics_agent above.
+# Requires step_functions OR analytics_agent to be active for the alarm inputs.
+#
+# module "monitoring" {
+#   source = "../../modules/monitoring"
+#
+#   environment        = var.environment
+#   name_prefix        = var.name_prefix
+#   alert_email        = var.alert_email
+#   state_machine_name = module.step_functions.state_machine_name   # swap for MWAA metric if using orchestration
+#   ecs_cluster_name   = module.analytics_agent.ecs_cluster_name
+#   ecs_service_name   = module.analytics_agent.ecs_service_name
+#   alb_arn_suffix     = module.analytics_agent.alb_arn_suffix
 # }

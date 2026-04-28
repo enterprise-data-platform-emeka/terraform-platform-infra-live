@@ -34,7 +34,7 @@ Every AWS resource this platform needs is defined here. Nothing is created manua
 
 ## How it all fits together
 
-Nine Terraform modules build the complete platform in dependency order. The diagram below shows how each module relates to the others and what part of the data pipeline it enables.
+Ten Terraform modules build the complete platform in dependency order. The diagram below shows how each module relates to the others and what part of the data pipeline it enables.
 
 ```mermaid
 flowchart LR
@@ -62,8 +62,14 @@ flowchart LR
         ORCH["orchestration\nMWAA environment\nAirflow webserver\nDAGs S3 bucket"]
     end
 
+    subgraph mon["Observability"]
+        MON["monitoring\nCloudWatch dashboard\nSNS ops-alerts topic\n5 alarms: pipeline, ECS, ALB"]
+    end
+
     IAM --> ING & PROC & SFN & SERV & AA
     IAM -.->|"swap for MWAA Airflow UI"| ORCH
+    SFN --> MON
+    AA --> MON
 ```
 
 ---
@@ -86,7 +92,8 @@ terraform-platform-infra-live/
 │   ├── serving/                      Redshift Serverless namespace and workgroup
 │   ├── step-functions/               Step Functions state machine (default daily orchestrator)
 │   ├── orchestration/                MWAA environment (Airflow UI alternative)
-│   └── analytics-agent/              ECR, ECS Fargate cluster, ALB for the Analytics Agent
+│   ├── analytics-agent/              ECR, ECS Fargate cluster, ALB for the Analytics Agent
+│   └── monitoring/                   CloudWatch dashboard, SNS topic, 5 alarms
 │
 └── environments/
     ├── dev/
@@ -115,6 +122,7 @@ terraform-platform-infra-live/
 | step-functions | AWS Step Functions state machine for daily pipeline execution, IAM role for Step Functions, `run_dbt` Glue Python Shell job, CloudWatch log group. **Default orchestrator** — enabled in all environments. |
 | orchestration | MWAA (Amazon Managed Workflows for Apache Airflow) environment, DAGs S3 bucket, CloudWatch log groups. **Optional Airflow UI orchestrator** — runs the same pipeline as Step Functions with a visual task graph. Comment out `step_functions` and uncomment `orchestration` in `environments/dev/main.tf` to switch. |
 | analytics-agent | ECR (Elastic Container Registry) image repository, ECS (Elastic Container Service) Fargate cluster, ECS task definition and service, ALB (Application Load Balancer) with listeners for FastAPI (port 80) and Streamlit (port 8501), IAM task execution role and task role, CloudWatch log group |
+| monitoring | SNS (Simple Notification Service) topic with email subscription for operational alerts, CloudWatch dashboard with 4 metric panels (pipeline executions, ECS CPU/memory, ALB request rate, ALB P99 response time), and 5 alarms: Step Functions pipeline failure, ECS running task count drops to zero, ECS CPU above 80%, ALB 5xx errors above 5 per minute, ALB P99 response time above 30 seconds |
 
 ---
 
@@ -137,6 +145,7 @@ flowchart LR
         PROC["processing"]
         SFN["step-functions"]
         AA["analytics-agent"]
+        MON["monitoring"]
     end
 
     subgraph optional["Off by default"]
@@ -149,6 +158,8 @@ flowchart LR
     NET --> PROC & AA
     DL --> PROC & SFN & AA
     IAM --> PROC & SFN & AA
+    SFN --> MON
+    AA --> MON
 
     NET -.-> ING & SERV & ORCH
     DL -.-> ING
@@ -183,6 +194,10 @@ flowchart LR
 | `mwaa_role_arn` | iam-metadata | (orchestration) |
 | `glue_catalog_database_gold` | iam-metadata | analytics-agent |
 | `glue_catalog_database_silver` | iam-metadata | analytics-agent |
+| `state_machine_name` | step-functions | monitoring |
+| `ecs_cluster_name` | analytics-agent | monitoring |
+| `ecs_service_name` | analytics-agent | monitoring |
+| `alb_arn_suffix` | analytics-agent | monitoring |
 
 Entries in parentheses are for modules that are commented out by default in `environments/dev/main.tf`.
 
@@ -200,6 +215,7 @@ Not every module runs in every session. `environments/dev/main.tf` uses comments
 | processing | active | Always on |
 | step-functions | active | Comment out only when switching to MWAA mode |
 | analytics-agent | active | Always on |
+| monitoring | active | Always on |
 | ingestion | **commented out** | Uncomment when running the CDC simulator against AWS RDS |
 | serving | **commented out** | Uncomment when querying Gold data directly from Redshift |
 | orchestration | **commented out** | Uncomment (and comment out step-functions) to use MWAA Airflow orchestration with a visual task graph |
@@ -271,18 +287,20 @@ make apply dev
 
 ## Sensitive variables
 
-Two variables have no defaults and must be provided at apply time. Never put these in a `.tf` file or commit them to Git.
+These variables have no defaults and must be provided at apply time. Never put them in a `.tf` file or commit them to Git.
 
 | Variable | What it is |
 |---|---|
-| `db_password` | The master password for the RDS PostgreSQL database |
-| `redshift_admin_password` | The admin password for the Redshift Serverless namespace |
+| `db_password` | The master password for the RDS PostgreSQL database (only needed when the ingestion module is enabled) |
+| `redshift_admin_password` | The admin password for the Redshift Serverless namespace (only needed when the serving module is enabled) |
+| `alert_email` | Email address for CloudWatch alarm notifications via SNS |
 
 **Recommended — environment variables:**
 
 ```bash
 export TF_VAR_db_password="YourSecurePassword123!"
 export TF_VAR_redshift_admin_password="AnotherSecurePassword456!"
+export TF_VAR_alert_email="you@example.com"
 make apply dev
 ```
 
@@ -497,6 +515,13 @@ After `make apply dev` completes successfully, verify the following in the AWS c
 
 **MWAA (Amazon Managed Workflows for Apache Airflow) Console (demo mode only):**
 - Environment `edp-dev-mwaa` is in `Available` state (only if `module "orchestration"` is enabled)
+
+**CloudWatch Console:**
+- Dashboard `edp-dev-platform` exists and shows four metric panels
+- SNS topic `edp-dev-ops-alerts` exists under Simple Notification Service
+- Email subscription shows `PendingConfirmation` (or `Confirmed` after clicking the email link AWS sends)
+- Five alarms exist with names prefixed `edp-dev-`: `pipeline-failed`, `agent-no-running-tasks`, `agent-cpu-high`, `agent-alb-5xx`, `agent-alb-latency-p99`
+- All five alarms show `INSUFFICIENT_DATA` immediately after apply (no traffic yet) and transition to `OK` once the pipeline runs and the agent receives requests
 
 ---
 

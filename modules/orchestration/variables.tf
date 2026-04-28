@@ -57,3 +57,23 @@ variable "force_destroy" {
   type        = bool
   default     = false
 }
+
+variable "glue_role_arn" {
+  description = "IAM role ARN for Glue jobs from the iam-metadata module. Used by the run_dbt Python Shell job."
+  type        = string
+}
+
+variable "glue_scripts_bucket_name" {
+  description = "Name of the Glue scripts S3 bucket. The run_dbt.py script is read from here at job startup."
+  type        = string
+}
+
+variable "bronze_bucket_name" {
+  description = "Name of the Bronze S3 bucket. Passed to run_dbt so it can write dbt artifacts for the Analytics Agent."
+  type        = string
+}
+
+variable "athena_results_bucket" {
+  description = "Name of the Athena results S3 bucket. Passed to run_dbt so dbt-athena can write query results."
+  type        = string
+}

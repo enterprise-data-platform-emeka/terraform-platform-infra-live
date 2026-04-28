@@ -5,6 +5,37 @@ locals {
   dags_bucket_name = "${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-mwaa-dags"
 }
 
+# ── Glue Python Shell job: run_dbt ───────────────────────────────────────────
+# This job is required by the MWAA DAG's gold_dbt_run task. The script
+# (run_dbt.py) is uploaded to S3 by the platform-glue-jobs deploy workflow
+# alongside the six Silver PySpark jobs. It installs dbt-core and
+# dbt-athena-community at job startup via --additional-python-modules.
+
+resource "aws_glue_job" "run_dbt" {
+  name     = "${var.name_prefix}-${var.environment}-run-dbt"
+  role_arn = var.glue_role_arn
+
+  command {
+    name            = "pythonshell"
+    script_location = "s3://${var.glue_scripts_bucket_name}/glue-scripts/run_dbt.py"
+    python_version  = "3.9"
+  }
+
+  default_arguments = {
+    "--additional-python-modules" = "dbt-core==1.8.7,dbt-athena-community==1.8.3"
+    "--DBT_TARGET"                = var.environment
+    "--BRONZE_BUCKET"             = var.bronze_bucket_name
+    "--ATHENA_RESULTS_BUCKET"     = var.athena_results_bucket
+    "--ATHENA_WORKGROUP"          = "${var.name_prefix}-${var.environment}-workgroup"
+    "--DBT_ATHENA_SCHEMA"         = "${var.name_prefix}_${var.environment}_gold"
+    "--AWS_DEFAULT_REGION"        = data.aws_region.current.name
+  }
+
+  glue_version = "3.0"
+  max_capacity = 0.0625
+  timeout      = 30
+}
+
 # MWAA polls the dags/ prefix in this bucket every 30 seconds and loads new/changed DAG files.
 resource "aws_s3_bucket" "dags" {
   bucket        = local.dags_bucket_name
