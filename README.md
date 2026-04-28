@@ -63,7 +63,7 @@ flowchart LR
     end
 
     subgraph mon["Observability"]
-        MON["monitoring\nCloudWatch dashboard\nSNS ops-alerts topic\n5 alarms: pipeline, ECS, ALB"]
+        MON["monitoring\nCloudWatch dashboard\nSNS ops-alerts topic\n11 alarms: pipeline, ECS, ALB, Silver freshness"]
     end
 
     IAM --> ING & PROC & SFN & SERV & AA
@@ -93,7 +93,7 @@ terraform-platform-infra-live/
 │   ├── step-functions/               Step Functions state machine (default daily orchestrator)
 │   ├── orchestration/                MWAA environment (Airflow UI alternative)
 │   ├── analytics-agent/              ECR, ECS Fargate cluster, ALB for the Analytics Agent
-│   └── monitoring/                   CloudWatch dashboard, SNS topic, 5 alarms
+│   └── monitoring/                   CloudWatch dashboard, SNS topic, 11 alarms
 │
 └── environments/
     ├── dev/
@@ -122,7 +122,7 @@ terraform-platform-infra-live/
 | step-functions | AWS Step Functions state machine for daily pipeline execution, IAM role for Step Functions, `run_dbt` Glue Python Shell job, CloudWatch log group. **Default orchestrator** — enabled in all environments. |
 | orchestration | MWAA (Amazon Managed Workflows for Apache Airflow) environment, DAGs S3 bucket, CloudWatch log groups. **Optional Airflow UI orchestrator** — runs the same pipeline as Step Functions with a visual task graph. Comment out `step_functions` and uncomment `orchestration` in `environments/dev/main.tf` to switch. |
 | analytics-agent | ECR (Elastic Container Registry) image repository, ECS (Elastic Container Service) Fargate cluster, ECS task definition and service, ALB (Application Load Balancer) with listeners for FastAPI (port 80) and Streamlit (port 8501), IAM task execution role and task role, CloudWatch log group |
-| monitoring | SNS (Simple Notification Service) topic with email subscription for operational alerts, CloudWatch dashboard with 4 metric panels (pipeline executions, ECS CPU/memory, ALB request rate, ALB P99 response time), and 5 alarms: Step Functions pipeline failure, ECS running task count drops to zero, ECS CPU above 80%, ALB 5xx errors above 5 per minute, ALB P99 response time above 30 seconds |
+| monitoring | SNS (Simple Notification Service) topic with email subscription for operational alerts, CloudWatch dashboard with 5 metric panels (pipeline executions, ECS CPU/memory, ALB request rate, ALB P99 response time, Silver data freshness), and 11 alarms: Step Functions pipeline failure, ECS running task count drops to zero, ECS CPU above 80%, ALB 5xx errors above 5 per minute, ALB P99 response time above 30 seconds, and one freshness alarm per Silver table (6 total) that fires when the latest Bronze record is more than 24 hours behind the 2026-03-02 reference date |
 
 ---
 
@@ -517,11 +517,12 @@ After `make apply dev` completes successfully, verify the following in the AWS c
 - Environment `edp-dev-mwaa` is in `Available` state (only if `module "orchestration"` is enabled)
 
 **CloudWatch Console:**
-- Dashboard `edp-dev-platform` exists and shows four metric panels
+- Dashboard `edp-dev-platform` exists and shows five metric panels (four pipeline/agent panels and one Silver freshness panel)
 - SNS topic `edp-dev-ops-alerts` exists under Simple Notification Service
 - Email subscription shows `PendingConfirmation` (or `Confirmed` after clicking the email link AWS sends)
-- Five alarms exist with names prefixed `edp-dev-`: `pipeline-failed`, `agent-no-running-tasks`, `agent-cpu-high`, `agent-alb-5xx`, `agent-alb-latency-p99`
-- All five alarms show `INSUFFICIENT_DATA` immediately after apply (no traffic yet) and transition to `OK` once the pipeline runs and the agent receives requests
+- Five pipeline/agent alarms exist: `edp-dev-pipeline-failed`, `edp-dev-agent-no-running-tasks`, `edp-dev-agent-cpu-high`, `edp-dev-agent-alb-5xx`, `edp-dev-agent-alb-latency-p99`
+- Six Silver freshness alarms exist: `edp-dev-silver-dim_customer-stale`, `edp-dev-silver-dim_product-stale`, `edp-dev-silver-fact_orders-stale`, `edp-dev-silver-fact_order_items-stale`, `edp-dev-silver-fact_payments-stale`, `edp-dev-silver-fact_shipments-stale`
+- All eleven alarms show `INSUFFICIENT_DATA` immediately after apply and transition to `OK` once the pipeline runs (freshness alarms need the Glue jobs to publish their first metric point)
 
 ---
 
