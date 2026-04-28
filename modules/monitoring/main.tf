@@ -187,6 +187,56 @@ resource "aws_cloudwatch_metric_alarm" "alb_latency" {
   }
 }
 
+# ── Alarms 6–11: Silver data freshness per table ─────────────────────────────
+# Each Silver Glue job publishes max(_dms_timestamp) as SilverDataAgeHours in
+# the EDP/DataFreshness namespace. The value is hours between the latest Bronze
+# record and the reference date (2026-03-02 23:59:59 UTC). Positive = stale,
+# threshold 24 = data is more than one day behind the expected cutoff.
+# treat_missing_data = notBreaching: if the pipeline hasn't run yet this session
+# (no metric point exists) the alarm stays in OK — it's not an error to not have
+# run yet. The sfn_failure alarm covers the case where a run was attempted but
+# failed.
+
+locals {
+  silver_tables = [
+    "dim_customer",
+    "dim_product",
+    "fact_orders",
+    "fact_order_items",
+    "fact_payments",
+    "fact_shipments",
+  ]
+}
+
+resource "aws_cloudwatch_metric_alarm" "silver_freshness" {
+  for_each = toset(local.silver_tables)
+
+  alarm_name          = "${local.prefix}-silver-${each.key}-stale"
+  alarm_description   = "Silver table ${each.key} data age exceeded 24 hours relative to reference date (2026-03-02). max(_dms_timestamp) is too far behind the expected cutoff."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "SilverDataAgeHours"
+  namespace           = "EDP/DataFreshness"
+  period              = 3600
+  statistic           = "Minimum"
+  threshold           = 24
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    Table       = each.key
+    Environment = var.environment
+  }
+
+  alarm_actions = [aws_sns_topic.ops_alerts.arn]
+  ok_actions    = [aws_sns_topic.ops_alerts.arn]
+
+  tags = {
+    Project     = "EnterpriseDataPlatform"
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
+}
+
 # ── CloudWatch Dashboard ──────────────────────────────────────────────────────
 # Four metric panels and one alarm status bar. All metric panels use a 300s
 # (5-minute) period to smooth out per-minute noise on the overview.
@@ -278,20 +328,47 @@ resource "aws_cloudwatch_dashboard" "platform" {
         }
       },
       {
-        type   = "alarm"
+        type   = "metric"
         x      = 0
         y      = 12
+        width  = 24
+        height = 6
+        properties = {
+          title = "Silver Data Freshness — Hours Behind Reference Date (2026-03-02)"
+          metrics = [for t in local.silver_tables :
+            ["EDP/DataFreshness", "SilverDataAgeHours", "Table", t, "Environment", var.environment]
+          ]
+          period = 3600
+          stat   = "Minimum"
+          view   = "timeSeries"
+          region = data.aws_region.current.name
+          annotations = {
+            horizontal = [{
+              label = "Stale threshold (24 hours)"
+              value = 24
+              color = "#d62728"
+            }]
+          }
+        }
+      },
+      {
+        type   = "alarm"
+        x      = 0
+        y      = 18
         width  = 24
         height = 2
         properties = {
           title = "Alarm Status"
-          alarms = [
-            aws_cloudwatch_metric_alarm.sfn_failure.arn,
-            aws_cloudwatch_metric_alarm.ecs_no_tasks.arn,
-            aws_cloudwatch_metric_alarm.ecs_cpu_high.arn,
-            aws_cloudwatch_metric_alarm.alb_5xx.arn,
-            aws_cloudwatch_metric_alarm.alb_latency.arn,
-          ]
+          alarms = concat(
+            [
+              aws_cloudwatch_metric_alarm.sfn_failure.arn,
+              aws_cloudwatch_metric_alarm.ecs_no_tasks.arn,
+              aws_cloudwatch_metric_alarm.ecs_cpu_high.arn,
+              aws_cloudwatch_metric_alarm.alb_5xx.arn,
+              aws_cloudwatch_metric_alarm.alb_latency.arn,
+            ],
+            [for t in local.silver_tables : aws_cloudwatch_metric_alarm.silver_freshness[t].arn]
+          )
         }
       },
     ]

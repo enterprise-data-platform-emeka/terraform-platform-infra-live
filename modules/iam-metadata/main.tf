@@ -103,6 +103,18 @@ data "aws_iam_policy_document" "glue_data_access" {
       "arn:aws:s3:::${var.athena_results_bucket_name}/*",
     ]
   }
+
+  statement {
+    sid     = "DataFreshnessMetrics"
+    effect  = "Allow"
+    actions = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = ["EDP/DataFreshness"]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "glue_data_access" {
