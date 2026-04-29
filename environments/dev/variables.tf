@@ -5,8 +5,9 @@ variable "vpc_cidr"    { default = "10.10.0.0/16" }
 variable "name_prefix" { default = "edp" }
 
 variable "alert_email" {
-  description = "Email address for CloudWatch alarm SNS notifications. Provide via TF_VAR_alert_email."
+  description = "Email address for CloudWatch alarm SNS notifications. Optional — omit to skip the email subscription. Provide via TF_VAR_alert_email."
   type        = string
+  default     = null
 }
 
 # Ingestion variables — commented out after Phase 1 CDC run.
