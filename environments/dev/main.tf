@@ -117,11 +117,11 @@ module "monitoring" {
 module "analytics_agent" {
   source = "../../modules/analytics-agent"
 
-  environment        = var.environment
-  name_prefix        = var.name_prefix
-  vpc_id             = module.networking.vpc_id
-  private_subnet_ids = module.networking.private_subnet_ids
-  public_subnet_ids  = module.networking.public_subnet_ids
+  environment           = var.environment
+  name_prefix           = var.name_prefix
+  vpc_id                = module.networking.vpc_id
+  private_subnet_ids    = module.networking.private_subnet_ids
+  public_subnet_ids     = module.networking.public_subnet_ids
   bronze_bucket_name    = module.data_lake.bronze_bucket_name
   silver_bucket_name    = module.data_lake.silver_bucket_name
   gold_bucket_name      = module.data_lake.gold_bucket_name
@@ -129,6 +129,26 @@ module "analytics_agent" {
   kms_key_arn           = module.iam_metadata.kms_key_arn
   glue_gold_database    = module.iam_metadata.glue_catalog_database_gold
   glue_silver_database  = module.iam_metadata.glue_catalog_database_silver
+}
+
+# OPTIONAL STAKEHOLDER ENTRY POINT: Slack + MCP gateway.
+# This is off by default so the current platform session remains unchanged.
+# Enable with:
+#   TF_VAR_enable_slack_mcp_gateway=true
+#
+# Slack workspace/app identity stays outside Terraform destroy. This module only
+# manages the AWS runtime that connects to Slack via Socket Mode.
+module "slack_mcp_gateway" {
+  count  = var.enable_slack_mcp_gateway ? 1 : 0
+  source = "../../modules/slack-mcp-gateway"
+
+  environment         = var.environment
+  name_prefix         = var.name_prefix
+  vpc_id              = module.networking.vpc_id
+  private_subnet_ids  = module.networking.private_subnet_ids
+  analytics_agent_url = "http://${module.analytics_agent.alb_dns_name}"
+  allowed_channels    = var.slack_mcp_allowed_channels
+  desired_count       = var.slack_mcp_desired_count
 }
 
 # Bastion host — SSM tunnel to private RDS.

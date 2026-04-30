@@ -1,13 +1,31 @@
 variable "environment" { default = "dev" }
-variable "region"      { default = "eu-central-1" }
-variable "profile"     { default = null }
-variable "vpc_cidr"    { default = "10.10.0.0/16" }
+variable "region" { default = "eu-central-1" }
+variable "profile" { default = null }
+variable "vpc_cidr" { default = "10.10.0.0/16" }
 variable "name_prefix" { default = "edp" }
 
 variable "alert_email" {
   description = "Email address for CloudWatch alarm SNS notifications. Optional — omit to skip the email subscription. Provide via TF_VAR_alert_email."
   type        = string
   default     = null
+}
+
+variable "enable_slack_mcp_gateway" {
+  description = "Create the optional Slack MCP gateway ECS service."
+  type        = bool
+  default     = false
+}
+
+variable "slack_mcp_allowed_channels" {
+  description = "Comma-separated Slack channel allowlist for the gateway, for example analytics-agent-demo."
+  type        = string
+  default     = "analytics-agent-demo"
+}
+
+variable "slack_mcp_desired_count" {
+  description = "Number of Slack MCP gateway tasks to run when enabled."
+  type        = number
+  default     = 0
 }
 
 # Ingestion variables — commented out after Phase 1 CDC run.
