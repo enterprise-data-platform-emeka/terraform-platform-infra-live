@@ -33,7 +33,7 @@ variable "dms_instance_class" {
 variable "multi_az" {
   description = "Enable Multi-AZ for RDS and DMS"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "deletion_protection" {

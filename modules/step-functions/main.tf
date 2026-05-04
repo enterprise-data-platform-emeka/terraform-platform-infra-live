@@ -39,12 +39,121 @@ resource "aws_glue_job" "run_dbt" {
     "--ATHENA_RESULTS_BUCKET"     = var.athena_results_bucket
     "--ATHENA_WORKGROUP"          = "${var.name_prefix}-${var.environment}-workgroup"
     "--DBT_ATHENA_SCHEMA"         = "${var.name_prefix}_${var.environment}_gold"
+    "--DBT_SILVER_SCHEMA"         = "${var.name_prefix}_${var.environment}_silver"
     "--AWS_DEFAULT_REGION"        = data.aws_region.current.name
   }
 
   glue_version = "3.0"
   max_capacity = 0.0625
   timeout      = 30
+}
+
+# ── O1: Silver row count validation Lambda ────────────────────────────────────
+# Step Functions native SDK integration cannot compute a relative StartTime
+# (e.g. "now minus 2 hours") for CloudWatch queries. A lightweight Lambda
+# handles the six-table CloudWatch lookup and fails the execution clearly if
+# any Silver table has zero rows after the Glue jobs complete.
+
+data "archive_file" "validate_silver" {
+  type        = "zip"
+  output_path = "${path.module}/validate_silver_row_counts.zip"
+  source {
+    filename = "validate_silver_row_counts.py"
+    content  = <<-PYTHON
+      import boto3
+      from datetime import datetime, timedelta, timezone
+
+      SILVER_TABLES = [
+          "dim_customer",
+          "dim_product",
+          "fact_orders",
+          "fact_order_items",
+          "fact_payments",
+          "fact_shipments",
+      ]
+
+
+      def handler(event, context):
+          env = event.get("environment", "dev")
+          cw = boto3.client("cloudwatch")
+          now = datetime.now(timezone.utc)
+          start = now - timedelta(hours=2)
+          failures = []
+
+          for table in SILVER_TABLES:
+              resp = cw.get_metric_statistics(
+                  Namespace="EDP/DataQuality",
+                  MetricName="SilverRowCount",
+                  Dimensions=[
+                      {"Name": "Table", "Value": table},
+                      {"Name": "Environment", "Value": env},
+                  ],
+                  StartTime=start,
+                  EndTime=now,
+                  Period=7200,
+                  Statistics=["Maximum"],
+              )
+              dps = resp.get("Datapoints", [])
+              if not dps:
+                  failures.append(f"{table}: no row count metric published")
+                  continue
+              row_count = int(dps[0]["Maximum"])
+              print(f"[silver-row-count] {table}: {row_count:,} rows")
+              if row_count == 0:
+                  failures.append(f"{table}: 0 rows written to Silver")
+
+          if failures:
+              raise Exception(
+                  f"Silver row count validation failed: {'; '.join(failures)}"
+              )
+
+          return {"status": "ok", "tables_validated": len(SILVER_TABLES)}
+    PYTHON
+  }
+}
+
+data "aws_iam_policy_document" "lambda_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "validate_silver" {
+  name               = "${var.name_prefix}-${var.environment}-validate-silver-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+}
+
+data "aws_iam_policy_document" "validate_silver_policy" {
+  statement {
+    sid       = "CloudWatchRead"
+    actions   = ["cloudwatch:GetMetricStatistics"]
+    resources = ["*"]
+  }
+  statement {
+    sid       = "Logs"
+    actions   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["arn:aws:logs:*:*:*"]
+  }
+}
+
+resource "aws_iam_role_policy" "validate_silver" {
+  name   = "${var.name_prefix}-${var.environment}-validate-silver-policy"
+  role   = aws_iam_role.validate_silver.id
+  policy = data.aws_iam_policy_document.validate_silver_policy.json
+}
+
+resource "aws_lambda_function" "validate_silver_row_counts" {
+  function_name    = "${var.name_prefix}-${var.environment}-validate-silver-row-counts"
+  filename         = data.archive_file.validate_silver.output_path
+  source_code_hash = data.archive_file.validate_silver.output_base64sha256
+  role             = aws_iam_role.validate_silver.arn
+  handler          = "validate_silver_row_counts.handler"
+  runtime          = "python3.12"
+  timeout          = 30
 }
 
 # ── IAM role for Step Functions ───────────────────────────────────────────────
@@ -93,6 +202,15 @@ data "aws_iam_policy_document" "sfn_execution" {
       "glue:GetCrawler",
     ]
     resources = ["*"]
+  }
+
+  statement {
+    sid    = "LambdaInvoke"
+    effect = "Allow"
+    actions = [
+      "lambda:InvokeFunction",
+    ]
+    resources = [aws_lambda_function.validate_silver_row_counts.arn]
   }
 
   statement {
@@ -171,6 +289,20 @@ resource "aws_sfn_state_machine" "pipeline" {
         Comment    = "Discard the parallel job results array. The crawler polling loop requires a plain object as input, not an array."
         Result     = {}
         ResultPath = "$"
+        Next       = "ValidateSilverRowCounts"
+      }
+
+      ValidateSilverRowCounts = {
+        Type     = "Task"
+        Comment  = "Read SilverRowCount CloudWatch metrics published by each Glue job. Fails the execution if any Silver table has zero rows, catching silent data loss before the Crawler and dbt run spend time on bad data."
+        Resource = "arn:aws:states:::lambda:invoke"
+        Parameters = {
+          FunctionName = aws_lambda_function.validate_silver_row_counts.arn
+          Payload = {
+            environment = var.environment
+          }
+        }
+        ResultPath = null
         Next       = "StartSilverCrawler"
       }
 
