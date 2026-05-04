@@ -583,3 +583,54 @@ Each module has its own documentation file with detailed explanations of every r
 ---
 
 **Next:** [platform-cdc-simulator](https://github.com/enterprise-data-platform-emeka/platform-cdc-simulator): with the infrastructure running and DMS waiting, use the CDC simulator to generate PostgreSQL OLTP traffic for DMS to replicate into the Bronze S3 layer.
+
+---
+
+## Enterprise qualities
+
+### Reliability
+
+**R1: Multi-AZ for RDS and DMS (staging and production):** `multi_az = true` is set by default in `environments/staging/variables.tf` and `environments/prod/variables.tf`. AWS keeps a synchronised standby in a separate Availability Zone (AZ). On primary failure, failover completes in roughly 60 seconds with no application code change needed. Dev intentionally omits Multi-AZ: the ingestion module is commented out in dev because Bronze data is already in S3 from the initial CDC run.
+
+**Not yet implemented: DMS auto-restart (R2).** The DMS (Database Migration Service) CDC task stops silently on network blips or RDS reboots. Currently the only way to detect this is to open the DMS console and manually restart the task. A CloudWatch alarm on `CDCLatency` exceeding 5 minutes, paired with a Lambda that calls `StartReplicationTask`, would restore CDC automatically without operator intervention.
+
+---
+
+### Observability
+
+**O2: CloudWatch monitoring module:** The `monitoring` module creates a CloudWatch dashboard and 11 alarms across the full stack:
+
+- Step Functions execution failure alarm
+- ECS task count dropping to zero (container has crashed)
+- ECS CPU utilisation above threshold
+- ALB 5xx error rate
+- ALB P99 latency
+- Six Silver data freshness alarms (one per table, fires if `SilverDataAgeHours > 24`)
+
+All alarms publish to an SNS (Simple Notification Service) topic that sends email to the configured `alert_email` variable. One dashboard URL gives a complete health view without opening six separate AWS consoles.
+
+---
+
+### Data quality
+
+**O1: ValidateSilverRowCounts Lambda (Step Functions path):** After all six Silver Glue jobs complete, Step Functions invokes the `edp-{env}-validate-silver-row-counts` Lambda. The Lambda reads `SilverRowCount` CloudWatch metrics for all six tables and raises an exception if any table has zero rows or no metric was published in the last two hours. Step Functions marks the execution as failed with a clear error message. The equivalent check in the MWAA path is a PythonOperator task in the DAG.
+
+---
+
+### Scalability
+
+ECS Fargate for the Analytics Agent scales independently of the data pipeline. Adding more tasks requires only changing the `desired_count` variable with no infrastructure rebuild.
+
+Athena workgroup isolation means each environment has its own query history, result bucket, and cost attribution. One environment's heavy query load does not affect another.
+
+**Not yet implemented: Athena query scan limit (S1).** The Athena workgroup has no `bytes_scanned_cutoff_per_query`. An Analytics Agent question that generates a query without partition filters could scan the full Gold data lake. Setting `bytes_scanned_cutoff_per_query` on the workgroup would cancel the query before it runs and return a meaningful error to the user.
+
+---
+
+### Security
+
+- All compute (RDS, DMS, Glue, MWAA, ECS) runs in private subnets with no public IP addresses.
+- A single customer-managed KMS (Key Management Service) key encrypts all storage: S3 buckets, RDS, Glue job bookmarks, CloudWatch logs.
+- IAM roles follow least privilege: the Glue role reads Bronze and writes Silver only; the MWAA role can trigger Glue jobs but cannot read Gold; the Analytics Agent role reads Gold and writes to the audit log path only.
+- Sensitive variables (`db_password`, `redshift_admin_password`) are never stored in Terraform state defaults. They are passed at apply time via `TF_VAR_*` environment variables.
+- All S3 buckets block public access at both the bucket and account level.
