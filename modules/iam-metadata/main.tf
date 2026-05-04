@@ -52,8 +52,8 @@ resource "aws_iam_role_policy_attachment" "glue_service" {
 
 data "aws_iam_policy_document" "glue_data_access" {
   statement {
-    sid    = "S3DataLakeAccess"
-    effect = "Allow"
+    sid     = "S3DataLakeAccess"
+    effect  = "Allow"
     actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
     resources = [
       "arn:aws:s3:::${var.bronze_bucket_name}", "arn:aws:s3:::${var.bronze_bucket_name}/*",
@@ -65,9 +65,9 @@ data "aws_iam_policy_document" "glue_data_access" {
   }
 
   statement {
-    sid     = "KMSAccess"
-    effect  = "Allow"
-    actions = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
+    sid       = "KMSAccess"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
     resources = [aws_kms_key.platform.arn]
   }
 
@@ -95,8 +95,8 @@ data "aws_iam_policy_document" "glue_data_access" {
   }
 
   statement {
-    sid    = "AthenaResultsS3Access"
-    effect = "Allow"
+    sid     = "AthenaResultsS3Access"
+    effect  = "Allow"
     actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:GetBucketLocation", "s3:ListBucket"]
     resources = [
       "arn:aws:s3:::${var.athena_results_bucket_name}",
@@ -105,15 +105,34 @@ data "aws_iam_policy_document" "glue_data_access" {
   }
 
   statement {
-    sid     = "DataFreshnessMetrics"
-    effect  = "Allow"
-    actions = ["cloudwatch:PutMetricData"]
+    sid       = "DataFreshnessMetrics"
+    effect    = "Allow"
+    actions   = ["cloudwatch:PutMetricData"]
     resources = ["*"]
     condition {
       test     = "StringEquals"
       variable = "cloudwatch:namespace"
       values   = ["EDP/DataFreshness"]
     }
+  }
+
+  statement {
+    sid       = "DataQualityMetricsWrite"
+    effect    = "Allow"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = ["EDP/DataQuality"]
+    }
+  }
+
+  statement {
+    sid       = "DataQualityMetricsRead"
+    effect    = "Allow"
+    actions   = ["cloudwatch:GetMetricStatistics"]
+    resources = ["*"]
   }
 }
 
@@ -141,8 +160,8 @@ resource "aws_iam_role" "mwaa" {
 
 data "aws_iam_policy_document" "mwaa_execution" {
   statement {
-    sid    = "DAGsBucketAccess"
-    effect = "Allow"
+    sid     = "DAGsBucketAccess"
+    effect  = "Allow"
     actions = ["s3:GetObject*", "s3:GetBucket*", "s3:List*"]
     resources = [
       "arn:aws:s3:::${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-mwaa-dags",
@@ -276,8 +295,8 @@ resource "aws_iam_role_policy" "mwaa_execution" {
 # Airflow reads database passwords from SSM to create RDS and Redshift connections at startup.
 data "aws_iam_policy_document" "mwaa_ssm" {
   statement {
-    sid    = "ReadPlatformSecrets"
-    effect = "Allow"
+    sid     = "ReadPlatformSecrets"
+    effect  = "Allow"
     actions = ["ssm:GetParameter", "ssm:GetParameters"]
     resources = [
       "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/edp/${var.environment}/*",
@@ -326,9 +345,9 @@ data "aws_iam_policy_document" "redshift_access" {
   }
 
   statement {
-    sid     = "KMSAccess"
-    effect  = "Allow"
-    actions = ["kms:Decrypt", "kms:GenerateDataKey"]
+    sid       = "KMSAccess"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
     resources = [aws_kms_key.platform.arn]
   }
 
@@ -433,9 +452,9 @@ data "aws_iam_policy_document" "dms_s3_access" {
   }
 
   statement {
-    sid     = "KMSAccess"
-    effect  = "Allow"
-    actions = ["kms:GenerateDataKey", "kms:Decrypt"]
+    sid       = "KMSAccess"
+    effect    = "Allow"
+    actions   = ["kms:GenerateDataKey", "kms:Decrypt"]
     resources = [aws_kms_key.platform.arn]
   }
 }
