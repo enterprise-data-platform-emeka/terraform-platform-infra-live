@@ -289,7 +289,14 @@ resource "aws_sfn_state_machine" "pipeline" {
         Comment    = "Discard the parallel job results array. The crawler polling loop requires a plain object as input, not an array."
         Result     = {}
         ResultPath = "$"
-        Next       = "ValidateSilverRowCounts"
+        Next       = "WaitForMetricPropagation"
+      }
+
+      WaitForMetricPropagation = {
+        Type    = "Wait"
+        Comment = "CloudWatch custom metrics published via put_metric_data take approximately 60-90 seconds to become queryable via GetMetricStatistics. Without this wait the Lambda always finds no datapoints even when the Glue jobs published correctly."
+        Seconds = 90
+        Next    = "ValidateSilverRowCounts"
       }
 
       ValidateSilverRowCounts = {
