@@ -17,6 +17,12 @@ name: CI
 #     Secrets:   TF_VAR_DB_PASSWORD, TF_VAR_REDSHIFT_ADMIN_PASSWORD
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'environments/**'
+      - 'modules/**'
+      - '.github/workflows/**'
   pull_request:
     branches: [main]
     paths:
@@ -138,6 +144,7 @@ jobs:
           TF_VAR_profile: ""
 
       - name: Post plan as PR comment
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
@@ -170,6 +177,14 @@ jobs:
                 body,
               });
             }
+
+      - name: Write plan to job summary
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "### Terraform Plan (dev)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```hcl' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/plan.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail if plan errored
         if: steps.plan.outputs.exitcode == '1'

@@ -120,7 +120,7 @@ terraform-platform-infra-live/
 | processing | Glue security configuration (KMS encryption for bookmarks and logs), Glue VPC connection, Athena workgroup |
 | serving | Redshift Serverless namespace and workgroup |
 | step-functions | AWS Step Functions state machine for daily pipeline execution, IAM role for Step Functions, `run_dbt` Glue Python Shell job, CloudWatch log group. **Default orchestrator** — enabled in all environments. |
-| orchestration | MWAA (Amazon Managed Workflows for Apache Airflow) environment, DAGs S3 bucket, CloudWatch log groups. **Optional Airflow UI orchestrator** — runs the same pipeline as Step Functions with a visual task graph. Comment out `step_functions` and uncomment `orchestration` in `environments/dev/main.tf` to switch. |
+| orchestration | MWAA (Amazon Managed Workflows for Apache Airflow) environment, DAGs S3 bucket, CloudWatch log groups. **Optional Airflow UI orchestrator** — runs the same pipeline as Step Functions with a visual task graph. Select `mwaa` in the Session Start workflow when you want the Airflow path. |
 | analytics-agent | ECR (Elastic Container Registry) image repository, ECS (Elastic Container Service) Fargate cluster, ECS task definition and service, ALB (Application Load Balancer) with listeners for FastAPI (port 80) and Streamlit (port 8501), IAM task execution role and task role, CloudWatch log group |
 | monitoring | SNS (Simple Notification Service) topic with email subscription for operational alerts, CloudWatch dashboard with 5 metric panels (pipeline executions, ECS CPU/memory, ALB request rate, ALB P99 response time, Silver data freshness), and 11 alarms: Step Functions pipeline failure, ECS running task count drops to zero, ECS CPU above 80%, ALB 5xx errors above 5 per minute, ALB P99 response time above 30 seconds, and one freshness alarm per Silver table (6 total) that fires when the latest Bronze record is more than 24 hours behind the 2026-03-02 reference date |
 
@@ -218,7 +218,7 @@ Not every module runs in every session. `environments/dev/main.tf` uses comments
 | monitoring | active | Always on |
 | ingestion | **commented out** | Uncomment when running the CDC simulator against AWS RDS |
 | serving | **commented out** | Uncomment when querying Gold data directly from Redshift |
-| orchestration | **commented out** | Uncomment (and comment out step-functions) to use MWAA Airflow orchestration with a visual task graph |
+| orchestration | Session Start option | Select `mwaa` in the Session Start workflow to use MWAA Airflow orchestration with a visual task graph |
 
 The reason `ingestion` is commented out by default: the RDS instance and DMS task cost money to run ($0.02/hr for RDS, $0.10/hr for DMS). After the initial CDC (Change Data Capture) run that populated Bronze S3, the Bronze data persists between sessions. I only uncomment `ingestion` when I need to run the CDC simulator again.
 
@@ -560,13 +560,13 @@ tfsec scans all Terraform modules for HIGH and CRITICAL severity findings. MEDIU
 
 Runs `terraform plan` against the dev environment using OIDC (OpenID Connect) authentication. The plan output is posted as a comment on the pull request so reviewers see exactly what will change before approving the merge. The comment is updated on each new push to the PR so it always shows the latest plan.
 
-### On merge to main
+### After CI passes on main
 
-The deploy workflow triggers automatically and runs `terraform plan` then `terraform apply` against dev. The plan output is written to the GitHub Actions job summary for audit trail. Authentication uses OIDC, with no long-lived AWS credentials stored anywhere. The OIDC provider and `edp-dev-github-actions-role` are created by `terraform-bootstrap` and must exist before this workflow can run.
+Trigger the Deploy workflow manually from GitHub Actions and choose the target environment. It runs `terraform plan` then `terraform apply`. The plan output is written to the GitHub Actions job summary for audit trail. Authentication uses OIDC, with no long-lived AWS credentials stored anywhere. The OIDC provider and `edp-{env}-github-actions-role` are created by `terraform-bootstrap` and must exist before this workflow can run.
 
 ### Promotion to staging and prod
 
-Trigger the Deploy workflow manually from GitHub Actions and choose the target environment. GitHub Environment protection rules require reviewer approval for staging and prod before the job runs.
+GitHub Environment protection rules require reviewer approval for staging and prod before the job runs.
 
 ---
 

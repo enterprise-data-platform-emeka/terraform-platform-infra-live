@@ -55,21 +55,19 @@ module "processing" {
   silver_bucket_name    = module.data_lake.silver_bucket_name
 }
 
-# module "serving" — disabled until Gold data exists.
-# Redshift Serverless has a base RPU charge even when idle.
-# Uncomment when platform-dbt-analytics Gold models are ready to load.
-#
-# module "serving" {
-#   source                  = "../../modules/serving"
-#   environment             = var.environment
-#   name_prefix             = var.name_prefix
-#   vpc_id                  = module.networking.vpc_id
-#   vpc_cidr                = var.vpc_cidr
-#   private_subnet_ids      = module.networking.private_subnet_ids
-#   kms_key_arn             = module.iam_metadata.kms_key_arn
-#   redshift_role_arn       = module.iam_metadata.redshift_role_arn
-#   redshift_admin_password = var.redshift_admin_password
-# }
+module "serving" {
+  count  = var.enable_serving ? 1 : 0
+  source = "../../modules/serving"
+
+  environment             = var.environment
+  name_prefix             = var.name_prefix
+  vpc_id                  = module.networking.vpc_id
+  vpc_cidr                = var.vpc_cidr
+  private_subnet_ids      = module.networking.private_subnet_ids
+  kms_key_arn             = module.iam_metadata.kms_key_arn
+  redshift_role_arn       = module.iam_metadata.redshift_role_arn
+  redshift_admin_password = var.redshift_admin_password
+}
 
 # DEFAULT ORCHESTRATOR: Step Functions (fast startup, no separate deployment step)
 # To switch to MWAA (full Airflow UI with visual task graph): comment out step_functions, uncomment orchestration below.

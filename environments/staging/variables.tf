@@ -16,6 +16,12 @@ variable "enable_cdc_simulator" {
   default     = false
 }
 
+variable "enable_serving" {
+  description = "Create the optional Redshift Serverless serving layer for BI/query workloads."
+  type        = bool
+  default     = false
+}
+
 # ── Ingestion ────────────────────────────────────────────────────────────────
 
 variable "db_password" {
@@ -51,7 +57,8 @@ variable "deletion_protection" {
 # ── Serving ──────────────────────────────────────────────────────────────────
 
 variable "redshift_admin_password" {
-  description = "Admin password for Redshift Serverless namespace. Provide via TF_VAR_redshift_admin_password env var or secret.tfvars"
+  description = "Admin password for Redshift Serverless namespace. Required when enable_serving=true."
   type        = string
   sensitive   = true
+  default     = null
 }

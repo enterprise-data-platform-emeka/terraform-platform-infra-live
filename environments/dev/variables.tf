@@ -65,11 +65,17 @@ variable "deletion_protection" {
   default     = false
 }
 
-# ── Serving (commented out: module "serving" is disabled) ────────────────────
-# Uncomment when re-enabling Redshift Serverless in main.tf.
-#
-# variable "redshift_admin_password" {
-#   description = "Admin password for Redshift Serverless namespace. Provide via TF_VAR_redshift_admin_password env var or secret.tfvars"
-#   type        = string
-#   sensitive   = true
-# }
+# ── Serving ──────────────────────────────────────────────────────────────────
+
+variable "enable_serving" {
+  description = "Create the optional Redshift Serverless serving layer for BI/query workloads."
+  type        = bool
+  default     = false
+}
+
+variable "redshift_admin_password" {
+  description = "Admin password for Redshift Serverless namespace. Required when enable_serving=true."
+  type        = string
+  sensitive   = true
+  default     = null
+}

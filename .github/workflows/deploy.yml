@@ -3,13 +3,12 @@ name: Deploy
 # Runs terraform plan + apply for the target environment.
 #
 # Triggers:
-#   - push to main    -> automatically deploys to dev
-#   - workflow_dispatch -> manually deploys to staging or prod
+#   - workflow_dispatch -> manually deploys to the selected environment
 #
-# Promotion path: dev (auto) -> staging (manual) -> prod (manual + approval)
+# Promotion path: dev (manual) -> staging (manual) -> prod (manual + approval)
 #
 # GitHub Environment protection rules enforce the gates:
-#   dev     - no protection, auto-deploys on every merge to main
+#   dev     - manual trigger after CI passes
 #   staging - required reviewers before the job runs
 #   prod    - required reviewers + deployment protection rules
 #
@@ -27,23 +26,21 @@ name: Deploy
 #   TF_VAR_alert_email - set inline below or via TF_VAR_ALERT_EMAIL env var
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'environments/**'
-      - 'modules/**'
-      - '.github/workflows/deploy.yml'
-
   workflow_dispatch:
     inputs:
       environment:
-        description: "Target environment (dev auto-deploys on push to main)"
+        description: "Target environment"
         required: true
         type: choice
         options: [dev, staging, prod]
+      enable_serving:
+        description: "Create Redshift Serverless serving layer"
+        required: true
+        default: false
+        type: boolean
 
-# One deploy per environment at a time. If a new push arrives while a deploy
-# is running, GitHub cancels the in-progress run. Terraform catches SIGTERM
+# One deploy per environment at a time. If someone starts another deploy while
+# one is running, GitHub cancels the in-progress run. Terraform catches SIGTERM
 # and releases the state lock before the runner exits, preventing stale locks.
 concurrency:
   group: terraform-deploy-${{ github.ref_name }}-${{ inputs.environment || 'dev' }}
@@ -99,6 +96,7 @@ jobs:
         env:
           TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
           TF_VAR_redshift_admin_password: ${{ secrets.TF_VAR_REDSHIFT_ADMIN_PASSWORD }}
+          TF_VAR_enable_serving: ${{ inputs.enable_serving }}
           TF_VAR_profile: ""
           # TF_VAR_alert_email is optional. When not set, the SNS topic is
           # created but no email subscriber is added. Set TF_VAR_ALERT_EMAIL

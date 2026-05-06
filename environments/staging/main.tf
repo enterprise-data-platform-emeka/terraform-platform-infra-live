@@ -56,7 +56,9 @@ module "processing" {
 }
 
 module "serving" {
-  source                  = "../../modules/serving"
+  count  = var.enable_serving ? 1 : 0
+  source = "../../modules/serving"
+
   environment             = var.environment
   name_prefix             = var.name_prefix
   vpc_id                  = module.networking.vpc_id

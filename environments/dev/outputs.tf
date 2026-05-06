@@ -89,6 +89,28 @@ output "rds_identifier" {
   value       = try(module.ingestion[0].rds_identifier, null)
 }
 
+# ── Serving outputs ───────────────────────────────────────────────────────────
+
+output "redshift_namespace_name" {
+  description = "Redshift Serverless namespace name when serving is enabled"
+  value       = try(module.serving[0].namespace_name, null)
+}
+
+output "redshift_workgroup_name" {
+  description = "Redshift Serverless workgroup name when serving is enabled"
+  value       = try(module.serving[0].workgroup_name, null)
+}
+
+output "redshift_workgroup_endpoint" {
+  description = "Redshift Serverless endpoint when serving is enabled"
+  value       = try(module.serving[0].workgroup_endpoint, null)
+}
+
+output "redshift_security_group_id" {
+  description = "Redshift security group ID when serving is enabled"
+  value       = try(module.serving[0].redshift_security_group_id, null)
+}
+
 # ── Slack MCP Gateway outputs ────────────────────────────────────────────────
 
 output "slack_mcp_gateway_ecr_url" {
