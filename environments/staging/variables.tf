@@ -70,7 +70,7 @@ variable "db_password" {
 variable "db_instance_class" {
   description = "RDS instance class"
   type        = string
-  default     = "db.t3.small"
+  default     = "db.t3.micro"
 }
 
 variable "dms_instance_class" {
@@ -82,7 +82,7 @@ variable "dms_instance_class" {
 variable "multi_az" {
   description = "Enable Multi-AZ for RDS and DMS"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "deletion_protection" {

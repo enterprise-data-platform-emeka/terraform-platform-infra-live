@@ -36,14 +36,13 @@ module "ingestion" {
   bronze_bucket_name = module.data_lake.bronze_bucket_name
   dms_s3_role_arn    = module.iam_metadata.dms_s3_role_arn
 
-  db_password             = var.db_password
-  db_name                 = "ecommerce"
-  db_username             = "postgres"
-  db_instance_class       = var.db_instance_class
-  dms_instance_class      = var.dms_instance_class
-  multi_az                = var.multi_az
-  deletion_protection     = var.deletion_protection
-  backup_retention_period = 14
+  db_password         = var.db_password
+  db_name             = "ecommerce"
+  db_username         = "postgres"
+  db_instance_class   = var.db_instance_class
+  dms_instance_class  = var.dms_instance_class
+  multi_az            = var.multi_az
+  deletion_protection = var.deletion_protection
 }
 
 module "processing" {
