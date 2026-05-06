@@ -16,6 +16,42 @@ variable "enable_cdc_simulator" {
   default     = false
 }
 
+variable "enable_step_functions" {
+  description = "Create the Step Functions orchestrator."
+  type        = bool
+  default     = false
+}
+
+variable "enable_mwaa" {
+  description = "Create the MWAA Airflow orchestrator."
+  type        = bool
+  default     = true
+}
+
+variable "enable_analytics_agent" {
+  description = "Create the Analytics Agent ECS service."
+  type        = bool
+  default     = true
+}
+
+variable "enable_slack_mcp_gateway" {
+  description = "Create the optional Slack MCP gateway ECS service."
+  type        = bool
+  default     = false
+}
+
+variable "slack_mcp_allowed_channels" {
+  description = "Comma-separated Slack channel allowlist for the gateway, for example analytics-agent-demo."
+  type        = string
+  default     = "analytics-agent-demo"
+}
+
+variable "slack_mcp_desired_count" {
+  description = "Number of Slack MCP gateway tasks to run when enabled."
+  type        = number
+  default     = 0
+}
+
 variable "enable_serving" {
   description = "Create the optional Redshift Serverless serving layer for BI/query workloads."
   type        = bool
@@ -25,9 +61,10 @@ variable "enable_serving" {
 # ── Ingestion ────────────────────────────────────────────────────────────────
 
 variable "db_password" {
-  description = "RDS master password. Provide via TF_VAR_db_password env var or secret.tfvars"
+  description = "RDS master password. Required when enable_cdc_simulator=true."
   type        = string
   sensitive   = true
+  default     = null
 }
 
 variable "db_instance_class" {

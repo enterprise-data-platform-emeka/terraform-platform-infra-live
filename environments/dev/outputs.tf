@@ -2,44 +2,66 @@
 
 output "monitoring_dashboard_url" {
   description = "CloudWatch dashboard URL — open this after apply to watch the pipeline run"
-  value       = module.monitoring.dashboard_url
+  value       = try(module.monitoring[0].dashboard_url, null)
 }
 
 output "monitoring_sns_topic" {
   description = "SNS ops-alerts topic ARN — add extra subscribers (Slack, PagerDuty) here"
-  value       = module.monitoring.sns_topic_arn
+  value       = try(module.monitoring[0].sns_topic_arn, null)
+}
+
+# ── Orchestration outputs ─────────────────────────────────────────────────────
+
+output "step_functions_state_machine_name" {
+  description = "Step Functions state machine name when Step Functions is enabled"
+  value       = try(module.step_functions[0].state_machine_name, null)
+}
+
+output "mwaa_webserver_url" {
+  description = "Airflow web UI URL when MWAA is enabled"
+  value       = try(module.orchestration[0].mwaa_webserver_url, null)
+}
+
+output "mwaa_dags_bucket" {
+  description = "S3 bucket where Airflow DAG files are uploaded when MWAA is enabled"
+  value       = try(module.orchestration[0].dags_bucket_name, null)
+}
+
+output "run_dbt_job_name" {
+  description = "Glue Python Shell job name for the dbt Gold run when MWAA is enabled"
+  value       = try(module.orchestration[0].run_dbt_job_name, null)
 }
 
 # ── Analytics Agent outputs ───────────────────────────────────────────────────
 
 output "analytics_agent_ecr_url" {
   description = "ECR repository URL — paste into the CI deploy workflow"
-  value       = module.analytics_agent.ecr_repository_url
+  value       = try(module.analytics_agent[0].ecr_repository_url, null)
 }
 
 output "analytics_agent_cluster" {
   description = "ECS cluster name — used in aws ecs run-task commands"
-  value       = module.analytics_agent.ecs_cluster_name
+  value       = try(module.analytics_agent[0].ecs_cluster_name, null)
 }
 
 output "analytics_agent_task_definition" {
   description = "Latest ECS task definition ARN"
-  value       = module.analytics_agent.task_definition_arn
+  value       = try(module.analytics_agent[0].task_definition_arn, null)
 }
 
 output "analytics_agent_log_group" {
   description = "CloudWatch log group for structured JSON agent logs"
-  value       = module.analytics_agent.log_group_name
+  value       = try(module.analytics_agent[0].log_group_name, null)
 }
 
 output "analytics_agent_alb_dns" {
   description = "Internal ALB DNS name — POST to http://{dns}/ask from within the VPC"
-  value       = module.analytics_agent.alb_dns_name
+  value       = try(module.analytics_agent[0].alb_dns_name, null)
 }
 
 output "analytics_agent_service" {
   description = "ECS service name"
-  value       = module.analytics_agent.ecs_service_name
+  value       = try(module.analytics_agent[0].ecs_service_name, null)
 }
 
 # ── CDC Simulator outputs ───────────────────────────────────────────────────

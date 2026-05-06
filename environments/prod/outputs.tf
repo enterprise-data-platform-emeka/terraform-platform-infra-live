@@ -1,18 +1,67 @@
+# ── Monitoring outputs ────────────────────────────────────────────────────────
+
+output "monitoring_dashboard_url" {
+  description = "CloudWatch dashboard URL when monitoring is enabled"
+  value       = try(module.monitoring[0].dashboard_url, null)
+}
+
+output "monitoring_sns_topic" {
+  description = "SNS ops-alerts topic ARN when monitoring is enabled"
+  value       = try(module.monitoring[0].sns_topic_arn, null)
+}
+
 # ── Orchestration outputs ─────────────────────────────────────────────────────
 
+output "step_functions_state_machine_name" {
+  description = "Step Functions state machine name when Step Functions is enabled"
+  value       = try(module.step_functions[0].state_machine_name, null)
+}
+
 output "mwaa_webserver_url" {
-  description = "Airflow web UI URL — open after apply to trigger the edp_pipeline DAG"
-  value       = module.orchestration.mwaa_webserver_url
+  description = "Airflow web UI URL when MWAA is enabled"
+  value       = try(module.orchestration[0].mwaa_webserver_url, null)
 }
 
 output "mwaa_dags_bucket" {
-  description = "S3 bucket where Airflow DAG files are uploaded"
-  value       = module.orchestration.dags_bucket_name
+  description = "S3 bucket where Airflow DAG files are uploaded when MWAA is enabled"
+  value       = try(module.orchestration[0].dags_bucket_name, null)
 }
 
 output "run_dbt_job_name" {
-  description = "Glue Python Shell job name for the dbt Gold run — referenced by the MWAA DAG"
-  value       = module.orchestration.run_dbt_job_name
+  description = "Glue Python Shell job name for the dbt Gold run when MWAA is enabled"
+  value       = try(module.orchestration[0].run_dbt_job_name, null)
+}
+
+# ── Analytics Agent outputs ───────────────────────────────────────────────────
+
+output "analytics_agent_ecr_url" {
+  description = "ECR repository URL for the Analytics Agent"
+  value       = try(module.analytics_agent[0].ecr_repository_url, null)
+}
+
+output "analytics_agent_cluster" {
+  description = "ECS cluster name for the Analytics Agent"
+  value       = try(module.analytics_agent[0].ecs_cluster_name, null)
+}
+
+output "analytics_agent_task_definition" {
+  description = "Latest Analytics Agent ECS task definition ARN"
+  value       = try(module.analytics_agent[0].task_definition_arn, null)
+}
+
+output "analytics_agent_log_group" {
+  description = "CloudWatch log group for structured JSON agent logs"
+  value       = try(module.analytics_agent[0].log_group_name, null)
+}
+
+output "analytics_agent_alb_dns" {
+  description = "Internal ALB DNS name for the Analytics Agent"
+  value       = try(module.analytics_agent[0].alb_dns_name, null)
+}
+
+output "analytics_agent_service" {
+  description = "ECS service name for the Analytics Agent"
+  value       = try(module.analytics_agent[0].ecs_service_name, null)
 }
 
 # ── CDC Simulator outputs ───────────────────────────────────────────────────
@@ -53,13 +102,13 @@ output "cdc_simulator_log_group" {
 }
 
 output "dms_replication_task_arn" {
-  description = "DMS replication task ARN"
-  value       = module.ingestion.dms_replication_task_arn
+  description = "DMS replication task ARN when CDC simulator infrastructure is enabled"
+  value       = try(module.ingestion[0].dms_replication_task_arn, null)
 }
 
 output "rds_identifier" {
-  description = "RDS source DB identifier"
-  value       = module.ingestion.rds_identifier
+  description = "RDS source DB identifier when CDC simulator infrastructure is enabled"
+  value       = try(module.ingestion[0].rds_identifier, null)
 }
 
 # ── Serving outputs ───────────────────────────────────────────────────────────
@@ -84,29 +133,34 @@ output "redshift_security_group_id" {
   value       = try(module.serving[0].redshift_security_group_id, null)
 }
 
-# ── Analytics Agent outputs — uncomment when module "analytics_agent" is enabled ──
-#
-# output "monitoring_dashboard_url" {
-#   description = "CloudWatch dashboard URL — open this after apply to watch the pipeline run"
-#   value       = module.monitoring.dashboard_url
-# }
-#
-# output "monitoring_sns_topic" {
-#   description = "SNS ops-alerts topic ARN — add extra subscribers here"
-#   value       = module.monitoring.sns_topic_arn
-# }
-#
-# output "analytics_agent_ecr_url" {
-#   description = "ECR repository URL — paste into the CI deploy workflow"
-#   value       = module.analytics_agent.ecr_repository_url
-# }
-#
-# output "analytics_agent_alb_dns" {
-#   description = "ALB DNS name — POST to http://{dns}/ask from within the VPC"
-#   value       = module.analytics_agent.alb_dns_name
-# }
-#
-# output "analytics_agent_log_group" {
-#   description = "CloudWatch log group for structured JSON agent logs"
-#   value       = module.analytics_agent.log_group_name
-# }
+# ── Slack MCP Gateway outputs ────────────────────────────────────────────────
+
+output "slack_mcp_gateway_ecr_url" {
+  description = "ECR repository URL for the optional Slack MCP gateway"
+  value       = try(module.slack_mcp_gateway[0].ecr_repository_url, null)
+}
+
+output "slack_mcp_gateway_cluster" {
+  description = "ECS cluster name for the optional Slack MCP gateway"
+  value       = try(module.slack_mcp_gateway[0].ecs_cluster_name, null)
+}
+
+output "slack_mcp_gateway_service" {
+  description = "ECS service name for the optional Slack MCP gateway"
+  value       = try(module.slack_mcp_gateway[0].ecs_service_name, null)
+}
+
+output "slack_mcp_gateway_log_group" {
+  description = "CloudWatch log group for the optional Slack MCP gateway"
+  value       = try(module.slack_mcp_gateway[0].log_group_name, null)
+}
+
+output "slack_mcp_app_token_secret_name" {
+  description = "Secrets Manager secret name for SLACK_APP_TOKEN"
+  value       = try(module.slack_mcp_gateway[0].slack_app_token_secret_name, null)
+}
+
+output "slack_mcp_bot_token_secret_name" {
+  description = "Secrets Manager secret name for SLACK_BOT_TOKEN"
+  value       = try(module.slack_mcp_gateway[0].slack_bot_token_secret_name, null)
+}

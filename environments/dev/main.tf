@@ -69,9 +69,8 @@ module "serving" {
   redshift_admin_password = var.redshift_admin_password
 }
 
-# DEFAULT ORCHESTRATOR: Step Functions (fast startup, no separate deployment step)
-# To switch to MWAA (full Airflow UI with visual task graph): comment out step_functions, uncomment orchestration below.
 module "step_functions" {
+  count  = var.enable_step_functions ? 1 : 0
   source = "../../modules/step-functions"
 
   environment              = var.environment
@@ -83,35 +82,40 @@ module "step_functions" {
   glue_role_arn            = module.iam_metadata.glue_role_arn
 }
 
-# MWAA ORCHESTRATOR: Full Airflow environment with visual task graph (~25 min startup)
-# Switch: comment out module "step_functions" above, uncomment this block.
-# Also uncomment mwaa_role_arn output in outputs.tf if needed.
-#
-# module "orchestration" {
-#   source             = "../../modules/orchestration"
-#   environment        = var.environment
-#   name_prefix        = var.name_prefix
-#   vpc_id             = module.networking.vpc_id
-#   private_subnet_ids = module.networking.private_subnet_ids
-#   kms_key_arn        = module.iam_metadata.kms_key_arn
-#   mwaa_role_arn      = module.iam_metadata.mwaa_role_arn
-#   nat_gateway_id     = module.networking.nat_gateway_id
-#   force_destroy      = true
-# }
+module "orchestration" {
+  count  = var.enable_mwaa ? 1 : 0
+  source = "../../modules/orchestration"
+
+  environment        = var.environment
+  name_prefix        = var.name_prefix
+  vpc_id             = module.networking.vpc_id
+  private_subnet_ids = module.networking.private_subnet_ids
+  kms_key_arn        = module.iam_metadata.kms_key_arn
+  mwaa_role_arn      = module.iam_metadata.mwaa_role_arn
+  nat_gateway_id     = module.networking.nat_gateway_id
+  force_destroy      = true
+
+  glue_role_arn            = module.iam_metadata.glue_role_arn
+  glue_scripts_bucket_name = module.data_lake.glue_scripts_bucket_name
+  bronze_bucket_name       = module.data_lake.bronze_bucket_name
+  athena_results_bucket    = module.data_lake.athena_results_bucket
+}
 
 module "monitoring" {
+  count  = var.enable_step_functions && var.enable_analytics_agent ? 1 : 0
   source = "../../modules/monitoring"
 
   environment        = var.environment
   name_prefix        = var.name_prefix
   alert_email        = var.alert_email
-  state_machine_name = module.step_functions.state_machine_name
-  ecs_cluster_name   = module.analytics_agent.ecs_cluster_name
-  ecs_service_name   = module.analytics_agent.ecs_service_name
-  alb_arn_suffix     = module.analytics_agent.alb_arn_suffix
+  state_machine_name = module.step_functions[0].state_machine_name
+  ecs_cluster_name   = module.analytics_agent[0].ecs_cluster_name
+  ecs_service_name   = module.analytics_agent[0].ecs_service_name
+  alb_arn_suffix     = module.analytics_agent[0].alb_arn_suffix
 }
 
 module "analytics_agent" {
+  count  = var.enable_analytics_agent ? 1 : 0
   source = "../../modules/analytics-agent"
 
   environment           = var.environment
@@ -157,7 +161,7 @@ module "slack_mcp_gateway" {
   name_prefix         = var.name_prefix
   vpc_id              = module.networking.vpc_id
   private_subnet_ids  = module.networking.private_subnet_ids
-  analytics_agent_url = "http://${module.analytics_agent.alb_dns_name}"
+  analytics_agent_url = "http://${module.analytics_agent[0].alb_dns_name}"
   allowed_channels    = var.slack_mcp_allowed_channels
   desired_count       = var.slack_mcp_desired_count
 }

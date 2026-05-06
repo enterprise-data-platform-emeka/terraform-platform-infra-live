@@ -16,6 +16,24 @@ variable "enable_slack_mcp_gateway" {
   default     = false
 }
 
+variable "enable_step_functions" {
+  description = "Create the Step Functions orchestrator."
+  type        = bool
+  default     = true
+}
+
+variable "enable_mwaa" {
+  description = "Create the MWAA Airflow orchestrator."
+  type        = bool
+  default     = false
+}
+
+variable "enable_analytics_agent" {
+  description = "Create the Analytics Agent ECS service."
+  type        = bool
+  default     = true
+}
+
 variable "slack_mcp_allowed_channels" {
   description = "Comma-separated Slack channel allowlist for the gateway, for example analytics-agent-demo."
   type        = string
