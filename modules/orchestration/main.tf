@@ -133,8 +133,8 @@ resource "aws_s3_object" "requirements" {
 }
 
 resource "aws_s3_object" "plugins" {
-  bucket         = aws_s3_bucket.dags.id
-  key            = "plugins.zip"
+  bucket = aws_s3_bucket.dags.id
+  key    = "plugins.zip"
   # Minimal valid empty ZIP (22-byte end-of-central-directory record).
   # This is a permanent placeholder. The dbt project is delivered via S3 sync,
   # not plugins.zip. This file is never updated after initial creation.
@@ -148,18 +148,18 @@ resource "aws_s3_object" "plugins" {
 
 # MWAA environment. Note: first apply takes 20-30 minutes for AWS to provision Airflow.
 resource "aws_mwaa_environment" "this" {
-  name              = "${var.name_prefix}-${var.environment}-mwaa"
-  airflow_version        = var.airflow_version
-  environment_class      = var.mwaa_environment_class
-  webserver_access_mode  = "PUBLIC_ONLY"
+  name                  = "${var.name_prefix}-${var.environment}-mwaa"
+  airflow_version       = var.airflow_version
+  environment_class     = var.mwaa_environment_class
+  webserver_access_mode = "PUBLIC_ONLY"
 
-  dag_s3_path                  = "dags/"
-  requirements_s3_path         = aws_s3_object.requirements.key
+  dag_s3_path                    = "dags/"
+  requirements_s3_path           = aws_s3_object.requirements.key
   requirements_s3_object_version = aws_s3_object.requirements.version_id
-  plugins_s3_path              = aws_s3_object.plugins.key
-  plugins_s3_object_version    = aws_s3_object.plugins.version_id
-  source_bucket_arn    = aws_s3_bucket.dags.arn
-  execution_role_arn   = var.mwaa_role_arn
+  plugins_s3_path                = aws_s3_object.plugins.key
+  plugins_s3_object_version      = aws_s3_object.plugins.version_id
+  source_bucket_arn              = aws_s3_bucket.dags.arn
+  execution_role_arn             = var.mwaa_role_arn
   # kms_key is intentionally omitted. MWAA uses service-managed encryption for
   # its internal SQS queues and metadata. Customer-managed KMS requires the key
   # policy to explicitly grant access to sqs.amazonaws.com and logs.amazonaws.com
@@ -202,7 +202,7 @@ resource "aws_mwaa_environment" "this" {
     # resolution). When it does, all dispatched tasks fail immediately with
     # "Was the task killed externally?" at queued state. 15 seconds gives SQS
     # enough headroom for cold-start latency without masking real hangs.
-    "celery.operation_timeout"        = "15"
+    "celery.operation_timeout" = "15"
   }
 
   # Referencing nat_gateway_id in a tag creates an implicit Terraform dependency

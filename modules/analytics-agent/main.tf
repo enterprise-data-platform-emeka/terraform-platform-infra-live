@@ -416,15 +416,15 @@ resource "aws_ecs_task_definition" "agent" {
       linuxParameters = { initProcessEnabled = true }
 
       environment = [
-        { name = "ENVIRONMENT",           value = var.environment },
-        { name = "AWS_REGION",            value = local.region },
-        { name = "BRONZE_BUCKET",         value = var.bronze_bucket_name },
-        { name = "GOLD_BUCKET",           value = var.gold_bucket_name },
+        { name = "ENVIRONMENT", value = var.environment },
+        { name = "AWS_REGION", value = local.region },
+        { name = "BRONZE_BUCKET", value = var.bronze_bucket_name },
+        { name = "GOLD_BUCKET", value = var.gold_bucket_name },
         { name = "ATHENA_RESULTS_BUCKET", value = var.athena_results_bucket },
-        { name = "ATHENA_WORKGROUP",      value = local.athena_workgroup },
-        { name = "GLUE_GOLD_DATABASE",    value = var.glue_gold_database },
-        { name = "SSM_API_KEY_PARAM",     value = local.ssm_api_key_param },
-        { name = "SES_SENDER_EMAIL",      value = var.ses_sender_email },
+        { name = "ATHENA_WORKGROUP", value = local.athena_workgroup },
+        { name = "GLUE_GOLD_DATABASE", value = var.glue_gold_database },
+        { name = "SSM_API_KEY_PARAM", value = local.ssm_api_key_param },
+        { name = "SES_SENDER_EMAIL", value = var.ses_sender_email },
       ]
 
       portMappings = [

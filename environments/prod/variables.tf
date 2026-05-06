@@ -1,13 +1,19 @@
 variable "environment" { default = "prod" }
-variable "region"      { default = "eu-central-1" }
-variable "profile"     { default = null }
-variable "vpc_cidr"    { default = "10.30.0.0/16" }
+variable "region" { default = "eu-central-1" }
+variable "profile" { default = null }
+variable "vpc_cidr" { default = "10.30.0.0/16" }
 variable "name_prefix" { default = "edp" }
 
 variable "alert_email" {
   description = "Email address for CloudWatch alarm SNS notifications. Optional — omit to skip the email subscription. Provide via TF_VAR_alert_email."
   type        = string
   default     = null
+}
+
+variable "enable_cdc_simulator" {
+  description = "Create the CDC simulator ECS task runner for this environment."
+  type        = bool
+  default     = false
 }
 
 # ── Ingestion ────────────────────────────────────────────────────────────────

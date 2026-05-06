@@ -28,38 +28,42 @@ variable "slack_mcp_desired_count" {
   default     = 0
 }
 
-# Ingestion variables — commented out after Phase 1 CDC run.
-# Uncomment when module "ingestion" and bastion are re-enabled.
-#
-# variable "db_password" {
-#   description = "RDS master password. Provide via TF_VAR_db_password env var or secret.tfvars"
-#   type        = string
-#   sensitive   = true
-# }
-#
-# variable "db_instance_class" {
-#   description = "RDS instance class"
-#   type        = string
-#   default     = "db.t3.micro"
-# }
-#
-# variable "dms_instance_class" {
-#   description = "DMS replication instance class"
-#   type        = string
-#   default     = "dms.t3.medium"
-# }
-#
-# variable "multi_az" {
-#   description = "Enable Multi-AZ for RDS and DMS"
-#   type        = bool
-#   default     = false
-# }
-#
-# variable "deletion_protection" {
-#   description = "Enable RDS deletion protection"
-#   type        = bool
-#   default     = false
-# }
+variable "enable_cdc_simulator" {
+  description = "Create dev ingestion infrastructure and the CDC simulator ECS task runner."
+  type        = bool
+  default     = false
+}
+
+variable "db_password" {
+  description = "RDS master password. Required when enable_cdc_simulator=true."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "db_instance_class" {
+  description = "RDS instance class"
+  type        = string
+  default     = "db.t3.micro"
+}
+
+variable "dms_instance_class" {
+  description = "DMS replication instance class"
+  type        = string
+  default     = "dms.t3.medium"
+}
+
+variable "multi_az" {
+  description = "Enable Multi-AZ for RDS and DMS"
+  type        = bool
+  default     = false
+}
+
+variable "deletion_protection" {
+  description = "Enable RDS deletion protection"
+  type        = bool
+  default     = false
+}
 
 # ── Serving (commented out: module "serving" is disabled) ────────────────────
 # Uncomment when re-enabling Redshift Serverless in main.tf.

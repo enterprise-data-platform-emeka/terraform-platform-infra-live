@@ -90,6 +90,20 @@ module "orchestration" {
   athena_results_bucket    = module.data_lake.athena_results_bucket
 }
 
+module "source_simulator_runtime" {
+  count  = var.enable_cdc_simulator ? 1 : 0
+  source = "../../modules/source-simulator-runtime"
+
+  environment           = var.environment
+  name_prefix           = var.name_prefix
+  vpc_id                = module.networking.vpc_id
+  private_subnet_ids    = module.networking.private_subnet_ids
+  rds_security_group_id = module.ingestion.rds_security_group_id
+  rds_endpoint          = module.ingestion.rds_endpoint
+  ssm_db_password_path  = module.ingestion.ssm_db_password_path
+  kms_key_arn           = module.iam_metadata.kms_key_arn
+}
+
 # module "analytics_agent" — enable when deploying the agent to prod.
 # Requires the SSM parameter /edp/prod/anthropic_api_key to be created first.
 # Also uncomment the monitoring module below when this is enabled.

@@ -24,26 +24,25 @@ module "iam_metadata" {
   athena_results_bucket_name = module.data_lake.athena_results_bucket
 }
 
-# Ingestion (RDS + DMS) and bastion — commented out after Phase 1 CDC run.
-# Bronze data is already in S3. Uncomment only when re-running the CDC simulator.
-#
-# module "ingestion" {
-#   source              = "../../modules/ingestion"
-#   environment         = var.environment
-#   name_prefix         = var.name_prefix
-#   vpc_id              = module.networking.vpc_id
-#   private_subnet_ids  = module.networking.private_subnet_ids
-#   kms_key_arn         = module.iam_metadata.kms_key_arn
-#   bronze_bucket_name  = module.data_lake.bronze_bucket_name
-#   dms_s3_role_arn     = module.iam_metadata.dms_s3_role_arn
-#   db_password         = var.db_password
-#   db_instance_class   = var.db_instance_class
-#   dms_instance_class  = var.dms_instance_class
-#   multi_az            = var.multi_az
-#   deletion_protection = var.deletion_protection
-#   db_name             = "ecommerce"
-#   db_username         = "postgres"
-# }
+module "ingestion" {
+  count  = var.enable_cdc_simulator ? 1 : 0
+  source = "../../modules/ingestion"
+
+  environment         = var.environment
+  name_prefix         = var.name_prefix
+  vpc_id              = module.networking.vpc_id
+  private_subnet_ids  = module.networking.private_subnet_ids
+  kms_key_arn         = module.iam_metadata.kms_key_arn
+  bronze_bucket_name  = module.data_lake.bronze_bucket_name
+  dms_s3_role_arn     = module.iam_metadata.dms_s3_role_arn
+  db_password         = var.db_password
+  db_instance_class   = var.db_instance_class
+  dms_instance_class  = var.dms_instance_class
+  multi_az            = var.multi_az
+  deletion_protection = var.deletion_protection
+  db_name             = "ecommerce"
+  db_username         = "postgres"
+}
 
 module "processing" {
   source                = "../../modules/processing"
@@ -129,6 +128,20 @@ module "analytics_agent" {
   kms_key_arn           = module.iam_metadata.kms_key_arn
   glue_gold_database    = module.iam_metadata.glue_catalog_database_gold
   glue_silver_database  = module.iam_metadata.glue_catalog_database_silver
+}
+
+module "source_simulator_runtime" {
+  count  = var.enable_cdc_simulator ? 1 : 0
+  source = "../../modules/source-simulator-runtime"
+
+  environment           = var.environment
+  name_prefix           = var.name_prefix
+  vpc_id                = module.networking.vpc_id
+  private_subnet_ids    = module.networking.private_subnet_ids
+  rds_security_group_id = module.ingestion[0].rds_security_group_id
+  rds_endpoint          = module.ingestion[0].rds_endpoint
+  ssm_db_password_path  = module.ingestion[0].ssm_db_password_path
+  kms_key_arn           = module.iam_metadata.kms_key_arn
 }
 
 # OPTIONAL STAKEHOLDER ENTRY POINT: Slack + MCP gateway.
