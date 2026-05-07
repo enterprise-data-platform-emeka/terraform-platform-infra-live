@@ -132,6 +132,8 @@ module "analytics_agent" {
   kms_key_arn           = module.iam_metadata.kms_key_arn
   glue_gold_database    = module.iam_metadata.glue_catalog_database_gold
   glue_silver_database  = module.iam_metadata.glue_catalog_database_silver
+  task_cpu              = 1024
+  task_memory           = 2048
 }
 
 module "monitoring" {

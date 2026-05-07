@@ -472,6 +472,7 @@ resource "aws_lb" "agent" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = var.public_subnet_ids
+  idle_timeout       = 180
 
   # Access logs are disabled for dev. Enable for staging/prod when an access
   # log S3 bucket is available.
