@@ -23,12 +23,14 @@ on:
       - 'environments/**'
       - 'modules/**'
       - '.github/workflows/**'
+      - 'Makefile'
   pull_request:
     branches: [main]
     paths:
       - 'environments/**'
       - 'modules/**'
       - '.github/workflows/**'
+      - 'Makefile'
 
 jobs:
   # --------------------------------------------------------------------------
