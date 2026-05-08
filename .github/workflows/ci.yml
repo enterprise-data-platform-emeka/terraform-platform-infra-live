@@ -72,7 +72,7 @@ jobs:
         run: terraform validate
 
   # --------------------------------------------------------------------------
-  # Security scan: tfsec
+  # Security scan: Trivy (replaces tfsec — deprecated by Aqua Security)
   # Scans all Terraform modules for HIGH and CRITICAL severity findings.
   # MEDIUM and LOW findings are reviewed and suppressed via inline
   # tfsec:ignore comments where the pattern is intentional.
@@ -87,14 +87,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run tfsec
-        uses: aquasecurity/tfsec-action@v1.0.3
+      - name: Run Trivy security scan
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          working_directory: .
-          minimum_severity: HIGH
-          # soft_fail: true during initial rollout. Set to false once all
-          # intentional HIGH findings have inline tfsec:ignore annotations.
-          soft_fail: true
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: 0
 
   # --------------------------------------------------------------------------
   # Plan: terraform plan against dev, posted as PR comment
