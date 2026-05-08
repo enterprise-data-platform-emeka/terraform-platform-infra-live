@@ -1,4 +1,4 @@
-.PHONY: plan apply destroy init dev staging prod
+.PHONY: plan apply destroy destroy-safe init dev staging prod
 
 TF=terraform
 ENVIRONMENTS=dev staging prod
@@ -33,6 +33,24 @@ destroy:
 		exit 1; \
 	fi
 	@$(call run,$(filter $(ENVIRONMENTS),$(MAKECMDGOALS)),destroy)
+
+destroy-safe:
+	@if [ -z "$(filter $(ENVIRONMENTS),$(MAKECMDGOALS))" ]; then \
+		echo "Usage: make destroy-safe <dev|staging|prod>"; \
+		exit 1; \
+	fi
+	@ENV=$(filter $(ENVIRONMENTS),$(MAKECMDGOALS)); \
+	cd environments/$$ENV && \
+	TARGETS=$$(terraform state list 2>/dev/null | \
+		sed 's/\..*//' | sort -u | \
+		grep '^module\.' | \
+		grep -v '^module\.data_lake$$' | \
+		sed 's/^/-target=/' | tr '\n' ' '); \
+	if [ -z "$$TARGETS" ]; then \
+		echo "No Terraform state found — nothing to destroy."; \
+	else \
+		terraform destroy $$TARGETS -auto-approve; \
+	fi
 
 init:
 	@if [ -z "$(filter $(ENVIRONMENTS),$(MAKECMDGOALS))" ]; then \
