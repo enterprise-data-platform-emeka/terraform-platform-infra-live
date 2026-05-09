@@ -42,7 +42,7 @@ destroy-safe:
 	@ENV=$(filter $(ENVIRONMENTS),$(MAKECMDGOALS)); \
 	cd environments/$$ENV && \
 	TARGETS=$$(terraform state list 2>/dev/null | \
-		sed 's/\..*//' | sort -u | \
+		sed 's/\(module\.[^.]*\)\..*/\1/' | sort -u | \
 		grep '^module\.' | \
 		grep -v '^module\.data_lake$$' | \
 		sed 's/^/-target=/' | tr '\n' ' '); \
