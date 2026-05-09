@@ -88,7 +88,7 @@ variable "multi_az" {
 variable "deletion_protection" {
   description = "Enable RDS deletion protection"
   type        = bool
-  default     = true
+  default     = false
 }
 
 # ── Serving ──────────────────────────────────────────────────────────────────
