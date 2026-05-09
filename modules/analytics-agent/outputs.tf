@@ -33,6 +33,16 @@ output "alb_dns_name" {
   value       = aws_lb.agent.dns_name
 }
 
+output "alb_arn" {
+  description = "Analytics agent ALB ARN"
+  value       = aws_lb.agent.arn
+}
+
+output "alb_security_group_id" {
+  description = "Analytics agent ALB security group ID"
+  value       = aws_security_group.alb.id
+}
+
 output "streamlit_url" {
   description = "Streamlit UI URL. Open in a browser from within the VPC: http://{alb_dns_name}:8501"
   value       = "http://${aws_lb.agent.dns_name}:8501"
