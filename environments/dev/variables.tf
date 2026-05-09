@@ -34,6 +34,18 @@ variable "enable_analytics_agent" {
   default     = true
 }
 
+variable "enable_analytics_web" {
+  description = "Create the optional custom HTML analytics web dashboard ECS service."
+  type        = bool
+  default     = false
+}
+
+variable "analytics_web_desired_count" {
+  description = "Number of custom analytics web dashboard tasks to run when enabled."
+  type        = number
+  default     = 0
+}
+
 variable "slack_mcp_allowed_channels" {
   description = "Comma-separated Slack channel allowlist for the gateway, for example analytics-agent-demo."
   type        = string

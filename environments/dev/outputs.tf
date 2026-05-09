@@ -64,6 +64,28 @@ output "analytics_agent_service" {
   value       = try(module.analytics_agent[0].ecs_service_name, null)
 }
 
+# ── Analytics Web outputs ────────────────────────────────────────────────────
+
+output "analytics_web_ecr_url" {
+  description = "ECR repository URL for the optional custom HTML analytics dashboard"
+  value       = try(module.analytics_web[0].ecr_repository_url, null)
+}
+
+output "analytics_web_cluster" {
+  description = "ECS cluster name for the optional custom HTML analytics dashboard"
+  value       = try(module.analytics_web[0].ecs_cluster_name, null)
+}
+
+output "analytics_web_service" {
+  description = "ECS service name for the optional custom HTML analytics dashboard"
+  value       = try(module.analytics_web[0].ecs_service_name, null)
+}
+
+output "analytics_web_url" {
+  description = "Custom HTML analytics dashboard URL"
+  value       = try(module.analytics_web[0].url, null)
+}
+
 # ── CDC Simulator outputs ───────────────────────────────────────────────────
 
 output "cdc_simulator_ecr_url" {

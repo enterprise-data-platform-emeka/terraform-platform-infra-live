@@ -132,6 +132,23 @@ module "analytics_agent" {
   glue_silver_database  = module.iam_metadata.glue_catalog_database_silver
 }
 
+# OPTIONAL STAKEHOLDER ENTRY POINT: custom HTML analytics dashboard.
+# Streamlit remains available on port 8501. FastAPI remains available on port 80.
+# This adds a separate ECS service exposed on the same ALB at port 3000.
+module "analytics_web" {
+  count  = var.enable_analytics_web ? 1 : 0
+  source = "../../modules/analytics-web"
+
+  environment           = var.environment
+  name_prefix           = var.name_prefix
+  vpc_id                = module.networking.vpc_id
+  private_subnet_ids    = module.networking.private_subnet_ids
+  alb_arn               = module.analytics_agent[0].alb_arn
+  alb_security_group_id = module.analytics_agent[0].alb_security_group_id
+  analytics_agent_url   = "http://${module.analytics_agent[0].alb_dns_name}"
+  desired_count         = var.analytics_web_desired_count
+}
+
 module "source_simulator_runtime" {
   count  = var.enable_cdc_simulator ? 1 : 0
   source = "../../modules/source-simulator-runtime"
