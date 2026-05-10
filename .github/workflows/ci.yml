@@ -151,10 +151,21 @@ jobs:
           script: |
             const fs = require('fs');
             const plan = fs.readFileSync('/tmp/plan.txt', 'utf8');
-            const truncated = plan.length > 60000
-              ? plan.slice(0, 60000) + '\n\n... output truncated, see workflow logs for the full plan'
-              : plan;
-            const body = `### Terraform Plan (dev)\n\`\`\`hcl\n${truncated}\n\`\`\``;
+            // Show resource names and plan summary only — attribute values omitted
+            // (sensitive Terraform variables appear as "(sensitive value)" in full output,
+            // but filtering here removes all attribute lines as an extra safeguard)
+            const filtered = plan
+              .split('\n')
+              .filter(l => /^\s*(#\s+\w|Plan:|No changes|will be|Error|Warning)/.test(l))
+              .slice(0, 100)
+              .join('\n');
+            const body = [
+              '### Terraform Plan (dev)',
+              '```',
+              filtered,
+              '```',
+              '_Resource names shown. Attribute values omitted. Full plan in workflow logs._',
+            ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -183,9 +194,12 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           echo "### Terraform Plan (dev)" >> "$GITHUB_STEP_SUMMARY"
-          echo '```hcl' >> "$GITHUB_STEP_SUMMARY"
-          cat /tmp/plan.txt >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^\s*(#\s+\w|Plan:|No changes|will be|Error|Warning)' /tmp/plan.txt \
+            | head -100 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "_Resource names shown. Attribute values omitted. Full plan in workflow logs._" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail if plan errored
         if: steps.plan.outputs.exitcode == '1'
