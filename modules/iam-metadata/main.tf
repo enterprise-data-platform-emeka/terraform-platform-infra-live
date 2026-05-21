@@ -1,7 +1,28 @@
+# -----------------------------------------------------------------------------
+# Module purpose
+# -----------------------------------------------------------------------------
+# This module creates the shared security and metadata foundation for one
+# environment. It owns the platform encryption key, the Glue Catalog databases,
+# and the IAM roles used by the data platform services.
+#
+# Read the file by service boundary:
+#   1. Platform encryption and Glue databases
+#   2. Glue PySpark jobs
+#   3. MWAA Airflow
+#   4. Redshift Serverless
+#   5. Systems Manager default EC2 management
+#   6. DMS ingestion roles
+
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
-# KMS key used to encrypt everything on the platform (S3, SSM params, Glue logs, Redshift).
+# -----------------------------------------------------------------------------
+# 1. Platform encryption and Glue databases
+# -----------------------------------------------------------------------------
+
+# One KMS key protects the environment-level platform data and operational
+# metadata. Other services receive narrow permissions to use this key only when
+# they need to read or write encrypted platform resources.
 resource "aws_kms_key" "platform" {
   description             = "EDP platform encryption key (${var.environment})"
   deletion_window_in_days = 30
@@ -13,7 +34,8 @@ resource "aws_kms_alias" "platform" {
   target_key_id = aws_kms_key.platform.key_id
 }
 
-# Glue Data Catalog databases — one per Medallion layer.
+# Glue Data Catalog databases are split by Medallion layer so jobs and query
+# engines can target Bronze, Silver, and Gold data separately.
 resource "aws_glue_catalog_database" "bronze" {
   name        = "${var.name_prefix}_${var.environment}_bronze"
   description = "Bronze layer - raw CDC-ingested data"
@@ -29,7 +51,13 @@ resource "aws_glue_catalog_database" "gold" {
   description = "Gold layer - aggregated analytics-ready data"
 }
 
-# IAM Role for Glue PySpark jobs.
+# -----------------------------------------------------------------------------
+# 2. Glue PySpark jobs
+# -----------------------------------------------------------------------------
+
+# Glue assumes this role when running ETL and dbt helper jobs. The attached
+# policies let those jobs move data through the Medallion layers, update the Glue
+# Catalog, write Athena results, and publish data quality metrics.
 data "aws_iam_policy_document" "glue_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -50,6 +78,9 @@ resource "aws_iam_role_policy_attachment" "glue_service" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
 }
 
+# Data movement permissions for Glue jobs. These jobs can read and write only
+# the platform buckets that take part in the pipeline, plus the script bucket
+# that stores job code.
 data "aws_iam_policy_document" "glue_data_access" {
   statement {
     sid     = "S3DataLakeAccess"
@@ -71,6 +102,8 @@ data "aws_iam_policy_document" "glue_data_access" {
     resources = [aws_kms_key.platform.arn]
   }
 
+  # Glue jobs create and update tables and partitions as files land in S3.
+  # dbt-athena also needs table-version operations when it replaces views.
   statement {
     sid    = "GlueCatalogAccess"
     effect = "Allow"
@@ -83,6 +116,8 @@ data "aws_iam_policy_document" "glue_data_access" {
     resources = ["*"]
   }
 
+  # run_dbt.py starts Athena queries from inside a Glue job, then reads query
+  # status and results for freshness checks, dbt runs, and dbt tests.
   statement {
     sid    = "AthenaQueryExecution"
     effect = "Allow"
@@ -94,6 +129,8 @@ data "aws_iam_policy_document" "glue_data_access" {
     resources = ["*"]
   }
 
+  # Athena stores query output in the dedicated results bucket. Glue needs this
+  # access only because dbt-athena writes and reads result files there.
   statement {
     sid     = "AthenaResultsS3Access"
     effect  = "Allow"
@@ -104,6 +141,7 @@ data "aws_iam_policy_document" "glue_data_access" {
     ]
   }
 
+  # Jobs publish freshness signals that monitoring alarms and dashboards read.
   statement {
     sid       = "DataFreshnessMetrics"
     effect    = "Allow"
@@ -116,6 +154,7 @@ data "aws_iam_policy_document" "glue_data_access" {
     }
   }
 
+  # Jobs publish row-count and quality signals during pipeline validation.
   statement {
     sid       = "DataQualityMetricsWrite"
     effect    = "Allow"
@@ -128,6 +167,8 @@ data "aws_iam_policy_document" "glue_data_access" {
     }
   }
 
+  # Validation code reads recent quality metrics to compare the current run with
+  # the expected state.
   statement {
     sid       = "DataQualityMetricsRead"
     effect    = "Allow"
@@ -142,7 +183,13 @@ resource "aws_iam_role_policy" "glue_data_access" {
   policy = data.aws_iam_policy_document.glue_data_access.json
 }
 
-# IAM Role for MWAA (Airflow).
+# -----------------------------------------------------------------------------
+# 3. MWAA Airflow
+# -----------------------------------------------------------------------------
+
+# MWAA assumes this role for the Airflow scheduler, workers, and webserver. The
+# role mirrors the Step Functions pipeline path so Airflow can run the same
+# end-to-end workflow during final validation.
 data "aws_iam_policy_document" "mwaa_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -158,7 +205,11 @@ resource "aws_iam_role" "mwaa" {
   assume_role_policy = data.aws_iam_policy_document.mwaa_assume_role.json
 }
 
+# Airflow needs to read DAG files and packaged dbt artifacts from the MWAA S3
+# bucket, invoke the approved Glue and crawler steps, run dbt through Athena, and
+# write Airflow logs and metrics.
 data "aws_iam_policy_document" "mwaa_execution" {
+  # DAG, requirements, plugins, and dbt project files are stored in this bucket.
   statement {
     sid     = "DAGsBucketAccess"
     effect  = "Allow"
@@ -169,6 +220,7 @@ data "aws_iam_policy_document" "mwaa_execution" {
     ]
   }
 
+  # MWAA publishes environment health and task metrics to the Airflow service.
   statement {
     sid       = "AirflowPublishMetrics"
     effect    = "Allow"
@@ -176,6 +228,8 @@ data "aws_iam_policy_document" "mwaa_execution" {
     resources = ["arn:aws:airflow:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:environment/${var.name_prefix}-${var.environment}-mwaa"]
   }
 
+  # Airflow task logs go to CloudWatch Logs. The resource patterns cover both
+  # AWS-created airflow-* log groups and the platform /aws/mwaa/ groups.
   statement {
     sid    = "AirflowLogging"
     effect = "Allow"
@@ -193,6 +247,7 @@ data "aws_iam_policy_document" "mwaa_execution" {
     ]
   }
 
+  # Airflow emits operational metrics for scheduler and worker health.
   statement {
     sid       = "AirflowMetrics"
     effect    = "Allow"
@@ -200,6 +255,8 @@ data "aws_iam_policy_document" "mwaa_execution" {
     resources = ["*"]
   }
 
+  # MWAA uses SQS internally for Celery task dispatch between scheduler and
+  # workers. The queue name is created by the managed service.
   statement {
     sid    = "AirflowSQS"
     effect = "Allow"
@@ -210,6 +267,9 @@ data "aws_iam_policy_document" "mwaa_execution" {
     resources = ["arn:aws:sqs:${data.aws_region.current.name}:*:airflow-celery-*"]
   }
 
+  # MWAA needs KMS access for its own managed SQS queue as well as platform data.
+  # The wildcard is intentional because the AWS-managed SQS key ARN is not known
+  # during Terraform planning.
   statement {
     sid     = "KMSAccess"
     effect  = "Allow"
@@ -221,6 +281,8 @@ data "aws_iam_policy_document" "mwaa_execution" {
     resources = ["*"]
   }
 
+  # The Airflow DAG starts and monitors the same Glue jobs used by the default
+  # Step Functions path.
   statement {
     sid    = "GlueJobInvoke"
     effect = "Allow"
@@ -231,6 +293,8 @@ data "aws_iam_policy_document" "mwaa_execution" {
     resources = ["*"]
   }
 
+  # Airflow starts the crawler after Silver data lands so the Glue Catalog sees
+  # the latest table and partition metadata.
   statement {
     sid    = "GlueCrawlerInvoke"
     effect = "Allow"
@@ -241,6 +305,8 @@ data "aws_iam_policy_document" "mwaa_execution" {
     resources = ["*"]
   }
 
+  # dbt-athena needs catalog read and write operations while building Gold views
+  # and tables from the Airflow path.
   statement {
     sid    = "GlueCatalogReadWrite"
     effect = "Allow"
@@ -257,6 +323,7 @@ data "aws_iam_policy_document" "mwaa_execution" {
     resources = ["*"]
   }
 
+  # Airflow runs dbt through Athena and checks query status and results.
   statement {
     sid    = "AthenaQueryExecution"
     effect = "Allow"
@@ -268,6 +335,8 @@ data "aws_iam_policy_document" "mwaa_execution" {
     resources = ["*"]
   }
 
+  # Airflow reads Silver data, writes Gold data, and uses the Athena results
+  # bucket while dbt runs.
   statement {
     sid    = "DataLakeS3Access"
     effect = "Allow"
@@ -292,7 +361,8 @@ resource "aws_iam_role_policy" "mwaa_execution" {
   policy = data.aws_iam_policy_document.mwaa_execution.json
 }
 
-# Airflow reads database passwords from SSM to create RDS and Redshift connections at startup.
+# Airflow reads connection values from SSM Parameter Store at startup so secrets
+# are not stored in DAG code or Terraform variables.
 data "aws_iam_policy_document" "mwaa_ssm" {
   statement {
     sid     = "ReadPlatformSecrets"
@@ -317,7 +387,12 @@ resource "aws_iam_role_policy" "mwaa_ssm" {
   policy = data.aws_iam_policy_document.mwaa_ssm.json
 }
 
-# IAM Role for Redshift Serverless (Spectrum + Glue Catalog access).
+# -----------------------------------------------------------------------------
+# 4. Redshift Serverless
+# -----------------------------------------------------------------------------
+
+# Redshift assumes this role when Spectrum reads external Silver and Gold data
+# through the Glue Catalog.
 data "aws_iam_policy_document" "redshift_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -333,6 +408,8 @@ resource "aws_iam_role" "redshift" {
   assume_role_policy = data.aws_iam_policy_document.redshift_assume_role.json
 }
 
+# Redshift gets read-only access to curated data and the catalog metadata needed
+# to expose external schemas. It does not get write access to the data lake.
 data "aws_iam_policy_document" "redshift_access" {
   statement {
     sid     = "S3SpectrumAccess"
@@ -368,6 +445,10 @@ resource "aws_iam_role_policy" "redshift_access" {
   policy = data.aws_iam_policy_document.redshift_access.json
 }
 
+# -----------------------------------------------------------------------------
+# 5. Systems Manager default EC2 management
+# -----------------------------------------------------------------------------
+
 # SSM Default Host Management Configuration (DHMC).
 # Enables account-level auto-registration of EC2 instances as SSM managed nodes.
 # AWS registers any instance whose IAM role includes AmazonSSMManagedInstanceCore
@@ -400,6 +481,10 @@ resource "aws_ssm_service_setting" "default_host_management" {
 
   depends_on = [aws_iam_role.ssm_default_host_management]
 }
+
+# -----------------------------------------------------------------------------
+# 6. DMS ingestion roles
+# -----------------------------------------------------------------------------
 
 # DMS service-linked IAM roles. These names are required by AWS DMS and cannot be changed.
 # If they already exist in the account, import them before applying:
@@ -435,12 +520,16 @@ resource "aws_iam_role_policy_attachment" "dms_cloudwatch" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonDMSCloudWatchLogsRole"
 }
 
+# DMS assumes this role to write change data capture files into the Bronze
+# landing bucket. It does not need access to Silver or Gold.
 resource "aws_iam_role" "dms_s3" {
   name               = "${var.name_prefix}-${var.environment}-dms-s3-role"
   assume_role_policy = data.aws_iam_policy_document.dms_assume_role.json
 }
 
 data "aws_iam_policy_document" "dms_s3_access" {
+  # DMS writes raw change events into Bronze and may delete its own intermediate
+  # objects during task reloads.
   statement {
     sid     = "BronzeS3Write"
     effect  = "Allow"
@@ -451,6 +540,8 @@ data "aws_iam_policy_document" "dms_s3_access" {
     ]
   }
 
+  # Bronze objects are encrypted with the platform key, so DMS needs data-key
+  # generation for writes and decrypt for task-level read checks.
   statement {
     sid       = "KMSAccess"
     effect    = "Allow"

@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Serving outputs
+# -----------------------------------------------------------------------------
+# Exposes Redshift endpoint metadata and the admin password parameter path.
+
 output "namespace_name" {
   description = "Redshift Serverless namespace name"
   value       = aws_redshiftserverless_namespace.this.namespace_name
@@ -19,6 +24,6 @@ output "redshift_security_group_id" {
 }
 
 output "ssm_redshift_password_path" {
-  description = "SSM parameter path for the Redshift admin password — fetch with: aws ssm get-parameter --name <value> --with-decryption"
+  description = "SSM parameter path for the Redshift admin password. Fetch with: aws ssm get-parameter --name <value> --with-decryption"
   value       = aws_ssm_parameter.redshift_admin_password.name
 }

@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Ingestion input variables
+# -----------------------------------------------------------------------------
+# Receives database sizing, DMS sizing, network IDs, and secure runtime values.
+
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string

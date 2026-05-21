@@ -1,3 +1,20 @@
+# -----------------------------------------------------------------------------
+# Dev environment composition
+# -----------------------------------------------------------------------------
+# This file wires the reusable modules into one development stack. The order
+# follows the platform dependency chain:
+#   1. Network, data lake, and IAM metadata
+#   2. Ingestion, processing, and serving
+#   3. Default Step Functions orchestration
+#   4. Optional validation and stakeholder entry points
+#
+# Dev is the fast iteration environment. Resources can be destroyed after each
+# session, and optional services stay behind feature flags.
+
+# -----------------------------------------------------------------------------
+# 1. Foundation
+# -----------------------------------------------------------------------------
+
 module "networking" {
   source             = "../../modules/networking"
   environment        = var.environment
@@ -23,6 +40,10 @@ module "iam_metadata" {
   glue_scripts_bucket_name   = module.data_lake.glue_scripts_bucket_name
   athena_results_bucket_name = module.data_lake.athena_results_bucket
 }
+
+# -----------------------------------------------------------------------------
+# 2. Data pipeline
+# -----------------------------------------------------------------------------
 
 module "ingestion" {
   count  = var.enable_cdc_simulator ? 1 : 0
@@ -69,6 +90,10 @@ module "serving" {
   redshift_admin_password = var.redshift_admin_password
 }
 
+# -----------------------------------------------------------------------------
+# 3. Orchestration
+# -----------------------------------------------------------------------------
+
 module "step_functions" {
   count  = var.enable_step_functions ? 1 : 0
   source = "../../modules/step-functions"
@@ -101,6 +126,10 @@ module "orchestration" {
   athena_results_bucket    = module.data_lake.athena_results_bucket
 }
 
+# -----------------------------------------------------------------------------
+# 4. Monitoring and stakeholder entry points
+# -----------------------------------------------------------------------------
+
 module "monitoring" {
   count  = var.enable_step_functions && var.enable_analytics_agent ? 1 : 0
   source = "../../modules/monitoring"
@@ -132,7 +161,7 @@ module "analytics_agent" {
   glue_silver_database  = module.iam_metadata.glue_catalog_database_silver
 }
 
-# OPTIONAL STAKEHOLDER ENTRY POINT: custom HTML analytics dashboard.
+# Optional stakeholder entry point: custom HTML analytics dashboard.
 # Streamlit remains available on port 8501. FastAPI remains available on port 80.
 # This adds a separate ECS service exposed on the same ALB at port 3000.
 module "analytics_web" {
@@ -163,7 +192,7 @@ module "source_simulator_runtime" {
   kms_key_arn           = module.iam_metadata.kms_key_arn
 }
 
-# OPTIONAL STAKEHOLDER ENTRY POINT: Slack + MCP gateway.
+# Optional stakeholder entry point: Slack + MCP gateway.
 # This is off by default so the current platform session remains unchanged.
 # Enable with:
 #   TF_VAR_enable_slack_mcp_gateway=true
@@ -183,7 +212,11 @@ module "slack_mcp_gateway" {
   desired_count       = var.slack_mcp_desired_count
 }
 
-# Bastion host — SSM tunnel to private RDS.
+# -----------------------------------------------------------------------------
+# 5. Optional dev-only bastion
+# -----------------------------------------------------------------------------
+
+# Bastion host for an SSM tunnel to private RDS.
 # Commented out after Phase 1 CDC run. Uncomment when re-running the CDC simulator.
 #
 # Usage when uncommented (after apply):

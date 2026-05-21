@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Monitoring input variables
+# -----------------------------------------------------------------------------
+# Receives resource names and optional alert destination for platform alarms.
+
 variable "environment" {
   description = "Deployment environment name (dev, staging, prod)"
   type        = string
@@ -9,7 +14,7 @@ variable "name_prefix" {
 }
 
 variable "alert_email" {
-  description = "Email address that receives SNS alarm notifications. Optional — when null, the SNS topic is created but no email subscriber is added. Set via TF_VAR_alert_email."
+  description = "Email address that receives SNS alarm notifications. Optional when null: the SNS topic is created but no email subscriber is added. Set via TF_VAR_alert_email."
   type        = string
   default     = null
 }

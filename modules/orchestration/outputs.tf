@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# MWAA orchestration outputs
+# -----------------------------------------------------------------------------
+# Exposes Airflow environment and artifact locations for deploy workflows.
+
 output "mwaa_environment_name" {
   description = "MWAA environment name"
   value       = aws_mwaa_environment.this.name
@@ -24,6 +29,6 @@ output "mwaa_security_group_id" {
 }
 
 output "run_dbt_job_name" {
-  description = "Name of the run_dbt Glue Python Shell job — referenced by the MWAA DAG gold_dbt_run task"
+  description = "Name of the run_dbt Glue Python Shell job. Referenced by the MWAA DAG gold_dbt_run task."
   value       = aws_glue_job.run_dbt.name
 }

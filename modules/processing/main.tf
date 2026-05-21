@@ -1,6 +1,17 @@
+# -----------------------------------------------------------------------------
+# Processing module
+# -----------------------------------------------------------------------------
+# Creates the Glue networking, encryption, crawler, and Athena workgroup used by
+# the Silver and Gold processing paths. The actual Glue job definitions live in
+# the platform-glue-jobs repository and are deployed by CI.
+
 data "aws_subnet" "private_a" {
   id = var.private_subnet_ids[0]
 }
+
+# -----------------------------------------------------------------------------
+# 1. Glue VPC access
+# -----------------------------------------------------------------------------
 
 # Glue workers communicate with each other on all TCP ports. The self-referencing
 # ingress rule allows any member of this group to reach any other member.
@@ -26,6 +37,10 @@ resource "aws_security_group" "glue" {
 
   tags = { Name = "${var.name_prefix}-${var.environment}-glue-sg" }
 }
+
+# -----------------------------------------------------------------------------
+# 2. Glue encryption and connection
+# -----------------------------------------------------------------------------
 
 # Glue security configuration encrypts job bookmarks, CloudWatch logs, and S3 output.
 resource "aws_glue_security_configuration" "this" {
@@ -60,13 +75,17 @@ resource "aws_glue_connection" "vpc" {
   }
 }
 
+# -----------------------------------------------------------------------------
+# 3. Catalog refresh and query workgroup
+# -----------------------------------------------------------------------------
+
 # Glue Crawler scans the Silver S3 bucket after each pipeline run and registers
 # table schemas in the Glue Data Catalog (edp_{env}_silver database). Without
 # this, dbt cannot query Silver tables via Athena because the catalog has no
 # knowledge of the Parquet files the Glue PySpark jobs wrote.
 #
 # The crawler is triggered by the Airflow DAG after all Silver jobs complete.
-# It runs on demand only — no schedule set here.
+# It runs on demand only. No schedule is set here.
 resource "aws_glue_crawler" "silver" {
   name          = "${var.name_prefix}-${var.environment}-silver-crawler"
   role          = "${var.name_prefix}-${var.environment}-glue-role"

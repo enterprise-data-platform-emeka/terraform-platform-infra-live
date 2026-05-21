@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Prod input variables
+# -----------------------------------------------------------------------------
+# Defines the configuration switches and sensitive values used by the prod stack.
+
 variable "environment" { default = "prod" }
 variable "region" { default = "eu-central-1" }
 variable "profile" { default = null }
@@ -5,7 +10,7 @@ variable "vpc_cidr" { default = "10.30.0.0/16" }
 variable "name_prefix" { default = "edp" }
 
 variable "alert_email" {
-  description = "Email address for CloudWatch alarm SNS notifications. Optional — omit to skip the email subscription. Provide via TF_VAR_alert_email."
+  description = "Email address for CloudWatch alarm SNS notifications. Optional: omit to skip the email subscription. Provide via TF_VAR_alert_email."
   type        = string
   default     = null
 }
@@ -58,7 +63,9 @@ variable "enable_serving" {
   default     = false
 }
 
-# ── Ingestion ────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Ingestion
+# -----------------------------------------------------------------------------
 
 variable "db_password" {
   description = "RDS master password. Required when enable_cdc_simulator=true."
@@ -91,7 +98,9 @@ variable "deletion_protection" {
   default     = false
 }
 
-# ── Serving ──────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Serving
+# -----------------------------------------------------------------------------
 
 variable "redshift_admin_password" {
   description = "Admin password for Redshift Serverless namespace. Required when enable_serving=true."

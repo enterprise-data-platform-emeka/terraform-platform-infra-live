@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Data lake input variables
+# -----------------------------------------------------------------------------
+# Receives environment naming and teardown behavior for S3 bucket creation.
+
 variable "environment" {
   type = string
 }

@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Monitoring outputs
+# -----------------------------------------------------------------------------
+# Exposes alerting and dashboard locations for operators.
+
 output "sns_topic_arn" {
   description = "ARN of the ops-alerts SNS topic. Add extra subscribers (Slack Lambda, PagerDuty) here."
   value       = aws_sns_topic.ops_alerts.arn

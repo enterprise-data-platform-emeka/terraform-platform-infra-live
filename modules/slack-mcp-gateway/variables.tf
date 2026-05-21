@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Slack MCP gateway input variables
+# -----------------------------------------------------------------------------
+# Receives ECS sizing, network IDs, analytics backend URL, and channel allow-list.
+
 variable "environment" {
   description = "Deployment environment: dev, staging, or prod"
   type        = string

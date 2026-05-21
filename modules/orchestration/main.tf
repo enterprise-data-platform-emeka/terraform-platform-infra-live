@@ -1,3 +1,10 @@
+# -----------------------------------------------------------------------------
+# MWAA orchestration module
+# -----------------------------------------------------------------------------
+# Creates the optional Airflow validation path. Step Functions remains the
+# default orchestrator, while MWAA is used for final end-to-end validation and
+# parity with enterprise Airflow workflows.
+
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
@@ -5,12 +12,14 @@ locals {
   dags_bucket_name = "${var.name_prefix}-${var.environment}-${data.aws_caller_identity.current.account_id}-mwaa-dags"
 }
 
-# ── Glue Python Shell job: run_dbt ───────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 1. dbt Glue job used by the Airflow DAG
+# -----------------------------------------------------------------------------
+
 # This job is required by the MWAA DAG's gold_dbt_run task. The script
 # (run_dbt.py) is uploaded to S3 by the platform-glue-jobs deploy workflow
 # alongside the six Silver PySpark jobs. It installs dbt-core and
 # dbt-athena-community at job startup via --additional-python-modules.
-
 resource "aws_glue_job" "run_dbt" {
   name     = "${var.name_prefix}-${var.environment}-run-dbt"
   role_arn = var.glue_role_arn
@@ -36,6 +45,10 @@ resource "aws_glue_job" "run_dbt" {
   timeout      = 30
 }
 
+# -----------------------------------------------------------------------------
+# 2. MWAA artifacts bucket
+# -----------------------------------------------------------------------------
+
 # MWAA polls the dags/ prefix in this bucket every 30 seconds and loads new/changed DAG files.
 resource "aws_s3_bucket" "dags" {
   bucket        = local.dags_bucket_name
@@ -55,8 +68,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "dags" {
       # MWAA requires the bucket encryption key to match the environment's
       # kms_key setting. Since MWAA uses service-managed encryption (no
       # kms_key specified), the bucket must also use service-managed
-      # encryption. The bucket holds DAG code and requirements.txt — not
-      # sensitive pipeline data — so SSE-S3 is appropriate.
+      # encryption. The bucket holds DAG code and requirements.txt, not
+      # sensitive pipeline data, so SSE-S3 is appropriate.
       sse_algorithm = "AES256"
     }
   }
@@ -69,6 +82,10 @@ resource "aws_s3_bucket_public_access_block" "dags" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
+
+# -----------------------------------------------------------------------------
+# 3. Logs and networking
+# -----------------------------------------------------------------------------
 
 # CloudWatch log groups with a retention period to keep costs bounded.
 # MWAA writes four separate log streams: scheduler, webserver, worker, dag-processor.
@@ -105,6 +122,10 @@ resource "aws_security_group" "mwaa" {
 
   tags = { Name = "${var.name_prefix}-${var.environment}-mwaa-sg" }
 }
+
+# -----------------------------------------------------------------------------
+# 4. Terraform-owned MWAA runtime files
+# -----------------------------------------------------------------------------
 
 # requirements.txt is infrastructure. Terraform owns and manages it fully.
 # MWAA's Python runtime environment (which packages are installed) is part of
@@ -145,6 +166,10 @@ resource "aws_s3_object" "plugins" {
     ignore_changes = [content_base64, etag]
   }
 }
+
+# -----------------------------------------------------------------------------
+# 5. MWAA environment
+# -----------------------------------------------------------------------------
 
 # MWAA environment. Note: first apply takes 20-30 minutes for AWS to provision Airflow.
 resource "aws_mwaa_environment" "this" {

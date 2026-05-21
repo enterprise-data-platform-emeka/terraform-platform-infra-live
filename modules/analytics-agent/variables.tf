@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Analytics Agent input variables
+# -----------------------------------------------------------------------------
+# Receives ECS sizing, network IDs, data access targets, and optional email config.
+
 variable "environment" {
   description = "Deployment environment: dev, staging, or prod"
   type        = string
@@ -30,12 +35,12 @@ variable "ses_sender_email" {
 }
 
 variable "bronze_bucket_name" {
-  description = "Bronze S3 bucket name — agent reads metadata/dbt/* and writes metadata/agent-audit/*"
+  description = "Bronze S3 bucket name. The agent reads metadata/dbt/* and writes metadata/agent-audit/*."
   type        = string
 }
 
 variable "gold_bucket_name" {
-  description = "Gold S3 bucket name — agent reads Gold Parquet files for Athena queries"
+  description = "Gold S3 bucket name. The agent reads Gold Parquet files for Athena queries."
   type        = string
 }
 
