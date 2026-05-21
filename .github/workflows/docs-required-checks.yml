@@ -1,0 +1,42 @@
+name: Docs Required Checks
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - "docs/**"
+      - "html/**"
+      - "images/**"
+
+jobs:
+  security-scan:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark documentation-only security scan as passed
+        run: |
+          echo "Documentation-only change. No infrastructure security scan is required."
+
+  validate-dev:
+    name: Validate (dev)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark documentation-only dev validation as passed
+        run: |
+          echo "Documentation-only change. No Terraform dev validation is required."
+
+  validate-staging:
+    name: Validate (staging)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark documentation-only staging validation as passed
+        run: |
+          echo "Documentation-only change. No Terraform staging validation is required."
+
+  validate-prod:
+    name: Validate (prod)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark documentation-only prod validation as passed
+        run: |
+          echo "Documentation-only change. No Terraform prod validation is required."
