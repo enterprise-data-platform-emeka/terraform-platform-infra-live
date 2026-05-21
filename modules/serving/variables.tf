@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Serving input variables
+# -----------------------------------------------------------------------------
+# Receives Redshift sizing, networking, credentials, and data access role ARNs.
+
 variable "environment" {
   description = "Environment name: dev, staging, or prod"
   type        = string

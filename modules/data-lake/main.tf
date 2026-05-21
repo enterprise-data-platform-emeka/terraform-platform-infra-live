@@ -1,3 +1,10 @@
+# -----------------------------------------------------------------------------
+# Data lake module
+# -----------------------------------------------------------------------------
+# Creates the S3 buckets that hold each platform data zone and supporting query
+# artifacts. Bucket names include the AWS account ID so dev, staging, and prod
+# can use globally unique names without hardcoding account identifiers.
+
 data "aws_caller_identity" "current" {}
 
 locals {
@@ -11,11 +18,19 @@ locals {
   }
 }
 
+# -----------------------------------------------------------------------------
+# 1. Buckets
+# -----------------------------------------------------------------------------
+
 resource "aws_s3_bucket" "this" {
   for_each      = local.buckets
   bucket        = each.value
   force_destroy = var.force_destroy
 }
+
+# -----------------------------------------------------------------------------
+# 2. Baseline bucket controls
+# -----------------------------------------------------------------------------
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
   for_each = local.buckets

@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Data lake outputs
+# -----------------------------------------------------------------------------
+# Exposes bucket names for ingestion, processing, orchestration, and analytics.
+
 output "bronze_bucket_name" {
   value = aws_s3_bucket.this["bronze"].bucket
 }

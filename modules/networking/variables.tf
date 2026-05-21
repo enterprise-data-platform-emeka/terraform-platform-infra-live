@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Networking input variables
+# -----------------------------------------------------------------------------
+# Receives environment names, CIDR ranges, and routing toggles from each stack.
+
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string
@@ -15,7 +20,7 @@ variable "vpc_cidr" {
 }
 
 variable "create_nat_gateway" {
-  description = "Whether to create a NAT Gateway so private subnets can reach the internet. Required for MWAA (to download PyPI packages). Costs ~$0.045/hr — only enable when MWAA is active."
+  description = "Whether to create a NAT Gateway so private subnets can reach the internet. Required for MWAA to download PyPI packages. Costs about $0.045/hr, so only enable when MWAA is active."
   type        = bool
   default     = false
 }

@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Processing outputs
+# -----------------------------------------------------------------------------
+# Exposes Glue and Athena names used by orchestration and deploy workflows.
+
 output "glue_security_configuration_name" {
   description = "Name of the Glue security configuration. Glue job definitions reference this by name to enable encryption."
   value       = aws_glue_security_configuration.this.name

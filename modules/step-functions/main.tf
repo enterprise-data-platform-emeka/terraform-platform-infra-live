@@ -1,3 +1,10 @@
+# -----------------------------------------------------------------------------
+# Step Functions orchestration module
+# -----------------------------------------------------------------------------
+# Creates the default pipeline orchestrator. The state machine runs the six
+# Silver Glue jobs in parallel, validates Silver row counts, refreshes the Glue
+# Catalog, and then runs dbt to build and test Gold.
+
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
@@ -12,7 +19,10 @@ locals {
   ]
 }
 
-# ── Glue Python Shell job: run_dbt ───────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 1. dbt Glue job
+# -----------------------------------------------------------------------------
+
 # Runs dbt against Athena to produce Gold tables. The script (run_dbt.py) is
 # uploaded to S3 by the platform-glue-jobs deploy workflow alongside the six
 # Silver PySpark jobs. It is triggered by Step Functions after the Silver
@@ -21,7 +31,6 @@ locals {
 # dbt-core and dbt-athena-community are installed at job startup via
 # --additional-python-modules. This adds ~2-3 min to the first run on a cold
 # container but requires no pre-built image or custom packaging.
-
 resource "aws_glue_job" "run_dbt" {
   name     = "${var.name_prefix}-${var.environment}-run-dbt"
   role_arn = var.glue_role_arn
@@ -48,7 +57,10 @@ resource "aws_glue_job" "run_dbt" {
   timeout      = 30
 }
 
-# ── O1: Silver row count validation Lambda ────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 2. Silver row count validation Lambda
+# -----------------------------------------------------------------------------
+
 # Step Functions native SDK integration cannot compute a relative StartTime
 # (e.g. "now minus 2 hours") for CloudWatch queries. A lightweight Lambda
 # handles the six-table CloudWatch lookup and fails the execution clearly if
@@ -156,11 +168,13 @@ resource "aws_lambda_function" "validate_silver_row_counts" {
   timeout          = 30
 }
 
-# ── IAM role for Step Functions ───────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 3. Step Functions IAM role
+# -----------------------------------------------------------------------------
+
 # Step Functions needs permission to start Glue job runs and wait for them,
 # and to start and poll the Glue Crawler. It also writes execution logs to
 # CloudWatch for debugging.
-
 data "aws_iam_policy_document" "sfn_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -236,14 +250,19 @@ resource "aws_iam_role_policy" "sfn_execution" {
   policy = data.aws_iam_policy_document.sfn_execution.json
 }
 
-# ── CloudWatch Log Group for Step Functions executions ────────────────────────
+# -----------------------------------------------------------------------------
+# 4. Execution logging
+# -----------------------------------------------------------------------------
 
 resource "aws_cloudwatch_log_group" "sfn" {
   name              = "/aws/states/${var.name_prefix}-${var.environment}-pipeline"
   retention_in_days = 7
 }
 
-# ── Step Functions state machine ──────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 5. State machine definition
+# -----------------------------------------------------------------------------
+
 # Pipeline:
 #   6 Silver Glue jobs (parallel) -> Silver crawler -> dbt Glue job
 #
@@ -253,7 +272,6 @@ resource "aws_cloudwatch_log_group" "sfn" {
 #
 # The Silver Crawler does not have a .sync integration, so it uses a
 # StartCrawler -> Wait -> GetCrawler -> Choice polling loop instead.
-
 resource "aws_sfn_state_machine" "pipeline" {
   name     = "${var.name_prefix}-${var.environment}-pipeline"
   role_arn = aws_iam_role.sfn.arn

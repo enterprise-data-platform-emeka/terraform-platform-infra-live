@@ -1,3 +1,10 @@
+# -----------------------------------------------------------------------------
+# CDC simulator runtime module
+# -----------------------------------------------------------------------------
+# Creates the optional ECS runtime for the source simulator. The simulator writes
+# synthetic e-commerce changes into the private PostgreSQL source database so
+# DMS can replicate them into Bronze.
+
 data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
@@ -6,6 +13,10 @@ locals {
   prefix                    = "${var.name_prefix}-${var.environment}"
   ssm_db_password_parameter = "arn:aws:ssm:${local.region}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_db_password_path}"
 }
+
+# -----------------------------------------------------------------------------
+# 1. Container image repository
+# -----------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "simulator" {
   name                 = "${local.prefix}-cdc-simulator"
@@ -48,6 +59,10 @@ resource "aws_ecr_lifecycle_policy" "simulator" {
   })
 }
 
+# -----------------------------------------------------------------------------
+# 2. ECS cluster and logs
+# -----------------------------------------------------------------------------
+
 resource "aws_ecs_cluster" "simulator" {
   name = "${local.prefix}-cdc-simulator"
 
@@ -61,6 +76,10 @@ resource "aws_cloudwatch_log_group" "simulator" {
   name              = "/ecs/${local.prefix}-cdc-simulator"
   retention_in_days = 14
 }
+
+# -----------------------------------------------------------------------------
+# 3. IAM roles
+# -----------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "ecs_assume_role" {
   statement {
@@ -129,6 +148,10 @@ resource "aws_iam_role_policy" "task" {
   policy = data.aws_iam_policy_document.task.json
 }
 
+# -----------------------------------------------------------------------------
+# 4. Network access to source RDS
+# -----------------------------------------------------------------------------
+
 resource "aws_security_group" "simulator" {
   name        = "${local.prefix}-cdc-simulator-sg"
   description = "CDC simulator ECS one-off tasks"
@@ -160,6 +183,10 @@ resource "aws_security_group_rule" "rds_ingress_simulator" {
   security_group_id        = var.rds_security_group_id
   description              = "Allow CDC simulator tasks to reach source RDS"
 }
+
+# -----------------------------------------------------------------------------
+# 5. ECS task definition
+# -----------------------------------------------------------------------------
 
 resource "aws_ecs_task_definition" "simulator" {
   family                   = "${local.prefix}-cdc-simulator"

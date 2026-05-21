@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# CDC simulator runtime outputs
+# -----------------------------------------------------------------------------
+# Exposes simulator repository, cluster, task definition, and security group IDs.
+
 output "ecr_repository_url" {
   description = "ECR repository URL for CDC simulator images."
   value       = aws_ecr_repository.simulator.repository_url

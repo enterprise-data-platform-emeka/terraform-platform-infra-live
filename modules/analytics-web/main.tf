@@ -1,3 +1,10 @@
+# -----------------------------------------------------------------------------
+# Analytics web module
+# -----------------------------------------------------------------------------
+# Creates the optional custom HTML dashboard runtime. It is a separate ECS
+# Fargate service that calls the Analytics Agent backend and is exposed through
+# the same Application Load Balancer on port 3000.
+
 data "aws_region" "current" {}
 
 locals {
@@ -5,7 +12,9 @@ locals {
   prefix = "${var.name_prefix}-${var.environment}"
 }
 
-# ── ECR ──────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 1. Container image repository
+# -----------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "web" {
   name                 = "${local.prefix}-analytics-web"
@@ -48,7 +57,9 @@ resource "aws_ecr_lifecycle_policy" "web" {
   })
 }
 
-# ── ECS cluster and logs ─────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 2. ECS cluster and logs
+# -----------------------------------------------------------------------------
 
 resource "aws_ecs_cluster" "web" {
   name = "${local.prefix}-analytics-web"
@@ -75,7 +86,9 @@ resource "aws_cloudwatch_log_group" "web" {
   retention_in_days = 30
 }
 
-# ── IAM ──────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 3. IAM roles
+# -----------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "ecs_assume_role" {
   statement {
@@ -122,7 +135,9 @@ resource "aws_iam_role_policy" "task" {
   policy = data.aws_iam_policy_document.task.json
 }
 
-# ── Networking and ALB wiring ────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 4. Networking and load balancer wiring
+# -----------------------------------------------------------------------------
 
 resource "aws_security_group" "web" {
   name        = "${local.prefix}-analytics-web-sg"
@@ -195,7 +210,9 @@ resource "aws_lb_listener" "web" {
   }
 }
 
-# ── ECS task and service ─────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 5. ECS task and service
+# -----------------------------------------------------------------------------
 
 resource "aws_ecs_task_definition" "web" {
   family                   = "${local.prefix}-analytics-web"

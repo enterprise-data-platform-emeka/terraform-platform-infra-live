@@ -1,10 +1,15 @@
+# -----------------------------------------------------------------------------
+# Analytics Agent outputs
+# -----------------------------------------------------------------------------
+# Exposes deployment, service, load balancer, and log identifiers for CI and ops.
+
 output "ecr_repository_url" {
-  description = "ECR repository URL — used by CI to tag and push images"
+  description = "ECR repository URL used by CI to tag and push images."
   value       = aws_ecr_repository.agent.repository_url
 }
 
 output "ecs_cluster_name" {
-  description = "ECS cluster name — used to run one-off tasks from the CLI"
+  description = "ECS cluster name used to run one-off tasks from the CLI."
   value       = aws_ecs_cluster.agent.name
 }
 
@@ -14,7 +19,7 @@ output "task_definition_arn" {
 }
 
 output "task_role_arn" {
-  description = "IAM task role ARN — the runtime identity of the agent process"
+  description = "IAM task role ARN for the runtime identity of the agent process."
   value       = aws_iam_role.task.arn
 }
 
@@ -24,7 +29,7 @@ output "security_group_id" {
 }
 
 output "log_group_name" {
-  description = "CloudWatch log group — query here for structured JSON agent logs"
+  description = "CloudWatch log group for structured JSON agent logs."
   value       = aws_cloudwatch_log_group.agent.name
 }
 
@@ -49,7 +54,7 @@ output "streamlit_url" {
 }
 
 output "ecs_service_name" {
-  description = "ECS service name — used by CI to trigger rolling deploys."
+  description = "ECS service name used by CI to trigger rolling deploys."
   value       = aws_ecs_service.agent.name
 }
 

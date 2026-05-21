@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Step Functions input variables
+# -----------------------------------------------------------------------------
+# Receives pipeline buckets, Glue role, and naming inputs for the default orchestrator.
+
 variable "environment" {
   description = "Environment name: dev, staging, or prod"
   type        = string

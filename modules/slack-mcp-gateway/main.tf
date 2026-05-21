@@ -1,3 +1,10 @@
+# -----------------------------------------------------------------------------
+# Slack MCP gateway module
+# -----------------------------------------------------------------------------
+# Creates the optional Slack entry point for the Analytics Agent. Terraform owns
+# the AWS runtime and secret containers only. Slack app identity and token values
+# stay outside Terraform state.
+
 data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
@@ -9,7 +16,9 @@ locals {
   slack_bot_token_secret_name = "/${var.name_prefix}/${var.environment}/slack_mcp/slack_bot_token"
 }
 
-# ── ECR repository ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 1. Container image repository
+# -----------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "gateway" {
   name                 = "${local.prefix}-slack-mcp-gateway"
@@ -52,10 +61,12 @@ resource "aws_ecr_lifecycle_policy" "gateway" {
   })
 }
 
-# ── Secrets Manager placeholders ─────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 2. Secrets Manager placeholders
+# -----------------------------------------------------------------------------
+
 # Terraform creates the secret containers, but not secret versions. Put values
 # in manually or from CI so token values never enter Terraform state.
-
 resource "aws_secretsmanager_secret" "slack_app_token" {
   name                    = local.slack_app_token_secret_name
   description             = "Slack Socket Mode app token for the EDP Slack MCP gateway"
@@ -68,7 +79,9 @@ resource "aws_secretsmanager_secret" "slack_bot_token" {
   recovery_window_in_days = 0
 }
 
-# ── ECS cluster and logs ─────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 3. ECS cluster and logs
+# -----------------------------------------------------------------------------
 
 resource "aws_ecs_cluster" "gateway" {
   name = "${local.prefix}-slack-mcp-gateway"
@@ -95,7 +108,9 @@ resource "aws_cloudwatch_log_group" "gateway" {
   retention_in_days = 30
 }
 
-# ── IAM ──────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 4. IAM roles
+# -----------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "ecs_assume_role" {
   statement {
@@ -163,10 +178,12 @@ resource "aws_iam_role_policy" "task" {
   policy = data.aws_iam_policy_document.task.json
 }
 
-# ── Networking ───────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 5. Networking
+# -----------------------------------------------------------------------------
+
 # The gateway is outbound-only. Socket Mode connects to Slack over HTTPS and
 # the gateway calls the analytics agent API over HTTP in dev.
-
 resource "aws_security_group" "gateway" {
   name        = "${local.prefix}-slack-mcp-gateway-sg"
   description = "Slack MCP gateway ECS tasks"
@@ -189,7 +206,9 @@ resource "aws_security_group" "gateway" {
   }
 }
 
-# ── ECS task and service ─────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 6. ECS task and service
+# -----------------------------------------------------------------------------
 
 resource "aws_ecs_task_definition" "gateway" {
   family                   = "${local.prefix}-slack-mcp-gateway"
@@ -251,4 +270,3 @@ resource "aws_ecs_service" "gateway" {
     ignore_changes = [task_definition, desired_count]
   }
 }
-

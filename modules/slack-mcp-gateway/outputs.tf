@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Slack MCP gateway outputs
+# -----------------------------------------------------------------------------
+# Exposes repository, ECS, log, and secret container identifiers.
+
 output "ecr_repository_url" {
   description = "ECR repository URL used by CI to tag and push gateway images"
   value       = aws_ecr_repository.gateway.repository_url
@@ -42,4 +47,3 @@ output "slack_bot_token_secret_name" {
   description = "Secrets Manager secret name for SLACK_BOT_TOKEN"
   value       = aws_secretsmanager_secret.slack_bot_token.name
 }
-

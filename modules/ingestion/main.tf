@@ -1,3 +1,11 @@
+# -----------------------------------------------------------------------------
+# Ingestion module
+# -----------------------------------------------------------------------------
+# Creates the PostgreSQL source database and Database Migration Service (DMS)
+# replication path used for Change Data Capture (CDC) into Bronze S3. DMS is
+# intentionally started manually after apply so each test session controls when
+# a fresh load begins.
+
 data "aws_caller_identity" "current" {}
 
 locals {
@@ -5,7 +13,12 @@ locals {
   pg_family = "postgres${split(".", var.db_engine_version)[0]}"
 }
 
-# Security group for RDS — only allows inbound from DMS and the bastion (added externally via rule).
+# -----------------------------------------------------------------------------
+# 1. Security groups
+# -----------------------------------------------------------------------------
+
+# Security group for RDS. Inbound access is limited to DMS and optional bastion
+# rules added by the environment.
 resource "aws_security_group" "rds" {
   name        = "${var.name_prefix}-${var.environment}-rds-sg"
   description = "RDS PostgreSQL source database"
@@ -46,6 +59,10 @@ resource "aws_security_group_rule" "dms_egress" {
   cidr_blocks       = ["0.0.0.0/0"]
   security_group_id = aws_security_group.dms.id
 }
+
+# -----------------------------------------------------------------------------
+# 2. Source PostgreSQL database
+# -----------------------------------------------------------------------------
 
 # RDS parameter group with logical replication enabled for DMS CDC.
 # RDS requires a reboot after first apply to activate logical replication.
@@ -95,6 +112,10 @@ resource "aws_db_instance" "source" {
   multi_az                = var.multi_az
 }
 
+# -----------------------------------------------------------------------------
+# 3. DMS replication path
+# -----------------------------------------------------------------------------
+
 resource "aws_dms_replication_subnet_group" "this" {
   replication_subnet_group_id          = "${var.name_prefix}-${var.environment}-dms-subnet-group"
   replication_subnet_group_description = "DMS replication subnet group for ${var.environment}"
@@ -125,7 +146,7 @@ resource "aws_dms_endpoint" "source" {
   ssl_mode      = "require"
 }
 
-# DMS S3 endpoint — writes Parquet files to Bronze with date partitioning.
+# DMS S3 endpoint writes Parquet files to Bronze with date partitioning.
 resource "aws_dms_s3_endpoint" "target_s3" {
   endpoint_id             = "${var.name_prefix}-${var.environment}-bronze-s3-endpoint"
   endpoint_type           = "target"
@@ -144,6 +165,10 @@ resource "aws_dms_s3_endpoint" "target_s3" {
   cdc_inserts_and_updates          = true
 }
 
+# -----------------------------------------------------------------------------
+# 4. Runtime connection metadata
+# -----------------------------------------------------------------------------
+
 # RDS password stored in SSM so Airflow and the ops agent can fetch it without
 # a password ever living in a file.
 resource "aws_ssm_parameter" "db_password" {
@@ -154,6 +179,8 @@ resource "aws_ssm_parameter" "db_password" {
   key_id      = var.kms_key_arn
 }
 
+# The task definition exists in Terraform, but DMS task execution is started
+# manually after each apply so CDC begins only when the test dataset is ready.
 resource "aws_dms_replication_task" "cdc" {
   replication_task_id      = "${var.name_prefix}-${var.environment}-cdc-task"
   source_endpoint_arn      = aws_dms_endpoint.source.endpoint_arn

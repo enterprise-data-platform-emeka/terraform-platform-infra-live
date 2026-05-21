@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Ingestion outputs
+# -----------------------------------------------------------------------------
+# Exposes source database and DMS identifiers to simulator and operations flows.
+
 output "rds_endpoint" {
   value = aws_db_instance.source.address
 }
@@ -27,6 +32,6 @@ output "dms_replication_task_arn" {
 }
 
 output "ssm_db_password_path" {
-  description = "SSM parameter path for the RDS password — fetch with: aws ssm get-parameter --name <value> --with-decryption"
+  description = "SSM parameter path for the RDS password. Fetch with: aws ssm get-parameter --name <value> --with-decryption"
   value       = aws_ssm_parameter.db_password.name
 }

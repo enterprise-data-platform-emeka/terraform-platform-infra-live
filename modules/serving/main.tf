@@ -1,4 +1,15 @@
+# -----------------------------------------------------------------------------
+# Serving module
+# -----------------------------------------------------------------------------
+# Creates Redshift Serverless for SQL consumers that need a warehouse-style
+# endpoint over the curated data lake. Redshift reads external Silver and Gold
+# data through Spectrum and the Glue Catalog.
+
 data "aws_caller_identity" "current" {}
+
+# -----------------------------------------------------------------------------
+# 1. Network access
+# -----------------------------------------------------------------------------
 
 resource "aws_security_group" "redshift" {
   name        = "${var.name_prefix}-${var.environment}-redshift-sg"
@@ -23,6 +34,10 @@ resource "aws_security_group" "redshift" {
   tags = { Name = "${var.name_prefix}-${var.environment}-redshift-sg" }
 }
 
+# -----------------------------------------------------------------------------
+# 2. Redshift Serverless namespace and workgroup
+# -----------------------------------------------------------------------------
+
 # Namespace is the storage/admin container. Workgroup is the compute layer in the VPC.
 resource "aws_redshiftserverless_namespace" "this" {
   namespace_name      = "${var.name_prefix}-${var.environment}-namespace"
@@ -44,6 +59,10 @@ resource "aws_redshiftserverless_workgroup" "this" {
 
   depends_on = [aws_redshiftserverless_namespace.this]
 }
+
+# -----------------------------------------------------------------------------
+# 3. Runtime connection metadata
+# -----------------------------------------------------------------------------
 
 # Redshift admin password stored in SSM for dbt, Airflow, and the ops agent.
 resource "aws_ssm_parameter" "redshift_admin_password" {

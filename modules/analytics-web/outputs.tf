@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Analytics web outputs
+# -----------------------------------------------------------------------------
+# Exposes the dashboard repository, cluster, service, and listener endpoints.
+
 output "ecr_repository_url" {
   description = "ECR repository URL used by CI to push web images"
   value       = aws_ecr_repository.web.repository_url

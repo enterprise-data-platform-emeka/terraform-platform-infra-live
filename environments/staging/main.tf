@@ -1,3 +1,20 @@
+# -----------------------------------------------------------------------------
+# Staging environment composition
+# -----------------------------------------------------------------------------
+# This file wires the reusable modules into a production-like validation stack.
+# The order follows the platform dependency chain:
+#   1. Network, data lake, and IAM metadata
+#   2. Ingestion, processing, and serving
+#   3. Default Step Functions orchestration
+#   4. Optional validation and stakeholder entry points
+#
+# Staging keeps safer defaults than dev while still supporting full end-to-end
+# validation before prod.
+
+# -----------------------------------------------------------------------------
+# 1. Foundation
+# -----------------------------------------------------------------------------
+
 module "networking" {
   source             = "../../modules/networking"
   environment        = var.environment
@@ -23,6 +40,10 @@ module "iam_metadata" {
   glue_scripts_bucket_name   = module.data_lake.glue_scripts_bucket_name
   athena_results_bucket_name = module.data_lake.athena_results_bucket
 }
+
+# -----------------------------------------------------------------------------
+# 2. Data pipeline
+# -----------------------------------------------------------------------------
 
 module "ingestion" {
   count  = var.enable_cdc_simulator ? 1 : 0
@@ -70,6 +91,10 @@ module "serving" {
   redshift_admin_password = var.redshift_admin_password
 }
 
+# -----------------------------------------------------------------------------
+# 3. Orchestration
+# -----------------------------------------------------------------------------
+
 module "step_functions" {
   count  = var.enable_step_functions ? 1 : 0
   source = "../../modules/step-functions"
@@ -101,6 +126,10 @@ module "orchestration" {
   bronze_bucket_name       = module.data_lake.bronze_bucket_name
   athena_results_bucket    = module.data_lake.athena_results_bucket
 }
+
+# -----------------------------------------------------------------------------
+# 4. Monitoring and stakeholder entry points
+# -----------------------------------------------------------------------------
 
 module "source_simulator_runtime" {
   count  = var.enable_cdc_simulator ? 1 : 0

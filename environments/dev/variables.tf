@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Dev input variables
+# -----------------------------------------------------------------------------
+# Defines the configuration switches and sensitive values used by the dev stack.
+
 variable "environment" { default = "dev" }
 variable "region" { default = "eu-central-1" }
 variable "profile" { default = null }
@@ -5,7 +10,7 @@ variable "vpc_cidr" { default = "10.10.0.0/16" }
 variable "name_prefix" { default = "edp" }
 
 variable "alert_email" {
-  description = "Email address for CloudWatch alarm SNS notifications. Optional — omit to skip the email subscription. Provide via TF_VAR_alert_email."
+  description = "Email address for CloudWatch alarm SNS notifications. Optional: omit to skip the email subscription. Provide via TF_VAR_alert_email."
   type        = string
   default     = null
 }
@@ -95,7 +100,9 @@ variable "deletion_protection" {
   default     = false
 }
 
-# ── Serving ──────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Serving
+# -----------------------------------------------------------------------------
 
 variable "enable_serving" {
   description = "Create the optional Redshift Serverless serving layer for BI/query workloads."

@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Processing input variables
+# -----------------------------------------------------------------------------
+# Receives Glue networking, encryption, Athena, and Silver bucket configuration.
+
 variable "environment" {
   description = "Environment name: dev, staging, or prod"
   type        = string

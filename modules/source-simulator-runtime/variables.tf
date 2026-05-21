@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# CDC simulator runtime input variables
+# -----------------------------------------------------------------------------
+# Receives ECS sizing, network IDs, source database connection metadata, and KMS access.
+
 variable "environment" {
   description = "Deployment environment name: dev, staging, or prod."
   type        = string

@@ -1,4 +1,6 @@
-# ── Monitoring outputs ────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Monitoring outputs
+# -----------------------------------------------------------------------------
 
 output "monitoring_dashboard_url" {
   description = "CloudWatch dashboard URL when monitoring is enabled"
@@ -10,7 +12,9 @@ output "monitoring_sns_topic" {
   value       = try(module.monitoring[0].sns_topic_arn, null)
 }
 
-# ── Orchestration outputs ─────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Orchestration outputs
+# -----------------------------------------------------------------------------
 
 output "step_functions_state_machine_name" {
   description = "Step Functions state machine name when Step Functions is enabled"
@@ -32,7 +36,9 @@ output "run_dbt_job_name" {
   value       = try(module.orchestration[0].run_dbt_job_name, null)
 }
 
-# ── Analytics Agent outputs ───────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Analytics Agent outputs
+# -----------------------------------------------------------------------------
 
 output "analytics_agent_ecr_url" {
   description = "ECR repository URL for the Analytics Agent"
@@ -64,7 +70,9 @@ output "analytics_agent_service" {
   value       = try(module.analytics_agent[0].ecs_service_name, null)
 }
 
-# ── CDC Simulator outputs ───────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# CDC Simulator outputs
+# -----------------------------------------------------------------------------
 
 output "cdc_simulator_ecr_url" {
   description = "ECR repository URL for the optional CDC simulator task image"
@@ -111,7 +119,9 @@ output "rds_identifier" {
   value       = try(module.ingestion[0].rds_identifier, null)
 }
 
-# ── Serving outputs ───────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Serving outputs
+# -----------------------------------------------------------------------------
 
 output "redshift_namespace_name" {
   description = "Redshift Serverless namespace name when serving is enabled"
@@ -133,7 +143,9 @@ output "redshift_security_group_id" {
   value       = try(module.serving[0].redshift_security_group_id, null)
 }
 
-# ── Slack MCP Gateway outputs ────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Slack MCP Gateway outputs
+# -----------------------------------------------------------------------------
 
 output "slack_mcp_gateway_ecr_url" {
   description = "ECR repository URL for the optional Slack MCP gateway"

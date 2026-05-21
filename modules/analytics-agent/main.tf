@@ -1,3 +1,11 @@
+# -----------------------------------------------------------------------------
+# Analytics Agent module
+# -----------------------------------------------------------------------------
+# Creates the FastAPI and Streamlit Analytics Agent runtime on ECS Fargate. The
+# module owns the container repository, ECS service, Application Load Balancer,
+# runtime IAM role, and least-privilege access to Athena, Glue, S3, SSM, KMS,
+# SES, and ECS Exec.
+
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
@@ -7,17 +15,19 @@ locals {
   prefix     = "${var.name_prefix}-${var.environment}"
 
   # SSM parameter path follows the platform convention: /edp/{env}/anthropic_api_key.
-  # The parameter itself is created manually (never in Terraform — secrets don't go in state).
+  # The parameter itself is created manually. Secrets do not go in Terraform state.
   ssm_api_key_param = "/edp/${var.environment}/anthropic_api_key"
 
   # Athena workgroup name follows the processing module's naming convention.
   athena_workgroup = "${var.name_prefix}-${var.environment}-workgroup"
 }
 
-# ── ECR repository ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 1. Container image repository
+# -----------------------------------------------------------------------------
+
 # Stores versioned Docker images built and pushed by CI on every merge to main
 # in the platform-analytics-agent repo.
-
 resource "aws_ecr_repository" "agent" {
   name                 = "${local.prefix}-analytics-agent"
   image_tag_mutability = "MUTABLE"
@@ -59,10 +69,12 @@ resource "aws_ecr_lifecycle_policy" "agent" {
   })
 }
 
-# ── ECS cluster ───────────────────────────────────────────────────────────────
-# FARGATE only — no EC2 instances to manage. The agent runs as one-off tasks
-# invoked from the CLI or (Phase 11) via FastAPI behind an ALB.
+# -----------------------------------------------------------------------------
+# 2. ECS cluster and logs
+# -----------------------------------------------------------------------------
 
+# Fargate only: no EC2 instances to manage. The agent runs as one-off tasks
+# invoked from the CLI or (Phase 11) via FastAPI behind an ALB.
 resource "aws_ecs_cluster" "agent" {
   name = "${local.prefix}-analytics-agent"
 
@@ -83,10 +95,8 @@ resource "aws_ecs_cluster_capacity_providers" "agent" {
   }
 }
 
-# ── CloudWatch log group ──────────────────────────────────────────────────────
 # Receives structured JSON logs from agent/logging.py. 30-day retention matches
 # the rest of the platform.
-
 resource "aws_cloudwatch_log_group" "agent" {
   name              = "/ecs/${local.prefix}-analytics-agent"
   retention_in_days = 30
@@ -97,10 +107,12 @@ resource "aws_cloudwatch_log_group" "agent" {
   # service-managed encryption is appropriate.
 }
 
-# ── IAM — task execution role ─────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 3. IAM roles
+# -----------------------------------------------------------------------------
+
 # Used by the ECS control plane to pull the image from ECR and stream logs to
 # CloudWatch. Not available to application code at runtime.
-
 data "aws_iam_policy_document" "ecs_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -121,10 +133,8 @@ resource "aws_iam_role_policy_attachment" "task_execution_managed" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# ── IAM — task role ───────────────────────────────────────────────────────────
 # The agent process assumes this role at runtime. Every statement maps to a
 # specific agent action. Nothing broader than what the code actually calls.
-
 resource "aws_iam_role" "task" {
   name               = "${local.prefix}-analytics-agent-task-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume_role.json
@@ -132,7 +142,7 @@ resource "aws_iam_role" "task" {
 
 data "aws_iam_policy_document" "task" {
 
-  # Gold S3 — read for Athena queries, write for chart PNGs uploaded by charts.py.
+  # Gold S3: read for Athena queries, write for chart PNGs uploaded by charts.py.
   statement {
     sid    = "GoldS3ReadOnly"
     effect = "Allow"
@@ -146,7 +156,7 @@ data "aws_iam_policy_document" "task" {
     ]
   }
 
-  # Silver S3 — read only. Gold views are built on Silver tables; Athena must
+  # Silver S3: read only. Gold views are built on Silver tables; Athena must
   # read the underlying Silver Parquet files when resolving Gold view queries.
   statement {
     sid    = "SilverS3ReadOnly"
@@ -161,7 +171,7 @@ data "aws_iam_policy_document" "task" {
     ]
   }
 
-  # Gold S3 charts/ prefix — write only. charts.py uploads one PNG per question.
+  # Gold S3 charts/ prefix: write only. charts.py uploads one PNG per question.
   # Presigned URL expiry means the object is effectively temporary.
   statement {
     sid     = "GoldChartsWrite"
@@ -172,7 +182,7 @@ data "aws_iam_policy_document" "task" {
     ]
   }
 
-  # Athena results bucket — read/write. Athena writes query output here;
+  # Athena results bucket: read/write. Athena writes query output here;
   # the agent reads the CSV back to return results to the caller.
   statement {
     sid    = "AthenaResultsReadWrite"
@@ -190,7 +200,7 @@ data "aws_iam_policy_document" "task" {
     ]
   }
 
-  # Bronze bucket — scoped prefixes only.
+  # Bronze bucket: scoped prefixes only.
   # metadata/dbt/*: agent reads dbt catalog.json at startup to enrich schemas.
   # metadata/agent-audit/*: agent writes one JSON audit record per question.
   # metadata/engineer-log/*: agent writes per-request CSV engineer logs and reads them back.
@@ -218,7 +228,7 @@ data "aws_iam_policy_document" "task" {
     ]
   }
 
-  # KMS — decrypt S3 objects (platform bucket encryption) and the SSM parameter
+  # KMS: decrypt S3 objects (platform bucket encryption) and the SSM parameter
   # (SecureString). Scoped to the platform key only.
   statement {
     sid    = "KMSDecrypt"
@@ -231,7 +241,7 @@ data "aws_iam_policy_document" "task" {
     resources = [var.kms_key_arn]
   }
 
-  # Glue Catalog — read only on Gold and Silver databases.
+  # Glue Catalog: read only on Gold and Silver databases.
   # Gold tables are views built on Silver; Athena must resolve both databases
   # when executing queries against Gold views.
   statement {
@@ -259,7 +269,7 @@ data "aws_iam_policy_document" "task" {
     ]
   }
 
-  # Athena — start, poll, and fetch results for a single query execution.
+  # Athena: start, poll, and fetch results for a single query execution.
   statement {
     sid    = "AthenaQueryExecution"
     effect = "Allow"
@@ -275,7 +285,7 @@ data "aws_iam_policy_document" "task" {
     ]
   }
 
-  # SSM — read the Anthropic API key at startup. Scoped to exact parameter path.
+  # SSM: read the Anthropic API key at startup. Scoped to exact parameter path.
   statement {
     sid     = "SSMApiKeyRead"
     effect  = "Allow"
@@ -285,7 +295,7 @@ data "aws_iam_policy_document" "task" {
     ]
   }
 
-  # ECS Exec — allows aws ecs execute-command to open an interactive shell
+  # ECS Exec: allows aws ecs execute-command to open an interactive shell
   # into a running Fargate task for debugging and manual testing.
   statement {
     sid    = "ECSExec"
@@ -299,7 +309,7 @@ data "aws_iam_policy_document" "task" {
     resources = ["*"]
   }
 
-  # SES — send PDF report emails. Only active when SES_SENDER_EMAIL is set.
+  # SES: send PDF report emails. Only active when SES_SENDER_EMAIL is set.
   statement {
     sid       = "SESSendReport"
     effect    = "Allow"
@@ -314,7 +324,10 @@ resource "aws_iam_role_policy" "task" {
   policy = data.aws_iam_policy_document.task.json
 }
 
-# ── Security groups ───────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 4. Security groups
+# -----------------------------------------------------------------------------
+
 # Two security groups are needed: one for the ALB (port 80 inbound from anywhere)
 # and one for the ECS tasks (port 8080 inbound from ALB, HTTPS egress to AWS APIs).
 #
@@ -356,7 +369,7 @@ resource "aws_security_group" "agent" {
   description = "Analytics agent ECS tasks"
   vpc_id      = var.vpc_id
 
-  # No inline ingress — defined separately below to avoid circular SG reference.
+  # No inline ingress. Rules are defined separately below to avoid circular SG references.
 
   egress {
     description = "HTTPS to AWS APIs and Anthropic API via NAT Gateway"
@@ -389,14 +402,16 @@ resource "aws_security_group_rule" "agent_ingress_streamlit_from_alb" {
   description              = "Port 8501 from ALB to Streamlit"
 }
 
-# ── ECS task definition ───────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 5. ECS task definition
+# -----------------------------------------------------------------------------
+
 # 512 CPU (0.5 vCPU) / 1024 MB is sufficient for pandas + matplotlib + the
 # response payload. Adjust task_cpu / task_memory variables for staging/prod.
 #
 # lifecycle.ignore_changes on container_definitions: CI registers new task
 # definition revisions directly after each image push. Terraform owns the
-# role, sizing, and log config — CI owns the image tag.
-
+# role, sizing, and log config. CI owns the image tag.
 resource "aws_ecs_task_definition" "agent" {
   family                   = "${local.prefix}-analytics-agent"
   requires_compatibilities = ["FARGATE"]
@@ -457,14 +472,17 @@ resource "aws_ecs_task_definition" "agent" {
   # revisions are never rolled back by terraform apply.
 }
 
-# ── ALB ───────────────────────────────────────────────────────────────────────
-# Internal ALB — accessible from within the VPC only. For a test session, reach
+# -----------------------------------------------------------------------------
+# 6. Application Load Balancer
+# -----------------------------------------------------------------------------
+
+# Internal ALB: accessible from within the VPC only. For a test session, reach
 # it via the bastion host or ECS Exec. The VPC design has only one public subnet
 # so the ALB is placed in the two private subnets (each in a different AZ), which
 # is all an ALB needs to operate.
 #
 # For the test-and-destroy workflow, HTTP (port 80) is sufficient. HTTPS requires
-# an ACM certificate which needs a domain name — out of scope for dev testing.
+# an ACM certificate which needs a domain name, which is out of scope for dev testing.
 
 resource "aws_lb" "agent" {
   name               = "${local.prefix}-agent-alb"
@@ -537,7 +555,10 @@ resource "aws_lb_listener" "streamlit" {
   }
 }
 
-# ── ECS service ───────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# 7. ECS service
+# -----------------------------------------------------------------------------
+
 # Keeps one Fargate task running behind the ALB. desired_count defaults to 1 and
 # is ignored by Terraform after initial creation so `aws ecs update-service
 # --desired-count 0` can pause the service between test sessions without
@@ -570,7 +591,7 @@ resource "aws_ecs_service" "agent" {
   }
 
   # CI registers new task definition revisions and calls update-service directly.
-  # Terraform owns sizing, networking, and IAM — not the specific image tag or
+  # Terraform owns sizing, networking, and IAM, not the specific image tag or
   # the current scale of the service.
   lifecycle {
     ignore_changes = [task_definition, desired_count]

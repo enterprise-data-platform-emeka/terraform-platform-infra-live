@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# IAM and metadata input variables
+# -----------------------------------------------------------------------------
+# Receives platform bucket names so service roles can be scoped to exact resources.
+
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string

@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Analytics web input variables
+# -----------------------------------------------------------------------------
+# Receives ECS sizing, network IDs, and backend endpoint details for the dashboard.
+
 variable "environment" {
   description = "Deployment environment: dev, staging, or prod"
   type        = string

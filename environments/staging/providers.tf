@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# AWS provider
+# -----------------------------------------------------------------------------
+# Uses the staging AWS SSO profile and applies common tags to all taggable resources.
+
 provider "aws" {
   region  = var.region
   profile = var.profile

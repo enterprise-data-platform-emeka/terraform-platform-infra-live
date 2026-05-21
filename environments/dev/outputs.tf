@@ -1,16 +1,20 @@
-# ── Monitoring outputs ────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Monitoring outputs
+# -----------------------------------------------------------------------------
 
 output "monitoring_dashboard_url" {
-  description = "CloudWatch dashboard URL — open this after apply to watch the pipeline run"
+  description = "CloudWatch dashboard URL. Open this after apply to watch the pipeline run."
   value       = try(module.monitoring[0].dashboard_url, null)
 }
 
 output "monitoring_sns_topic" {
-  description = "SNS ops-alerts topic ARN — add extra subscribers (Slack, PagerDuty) here"
+  description = "SNS ops-alerts topic ARN. Add extra subscribers here when needed."
   value       = try(module.monitoring[0].sns_topic_arn, null)
 }
 
-# ── Orchestration outputs ─────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Orchestration outputs
+# -----------------------------------------------------------------------------
 
 output "step_functions_state_machine_name" {
   description = "Step Functions state machine name when Step Functions is enabled"
@@ -32,15 +36,17 @@ output "run_dbt_job_name" {
   value       = try(module.orchestration[0].run_dbt_job_name, null)
 }
 
-# ── Analytics Agent outputs ───────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Analytics Agent outputs
+# -----------------------------------------------------------------------------
 
 output "analytics_agent_ecr_url" {
-  description = "ECR repository URL — paste into the CI deploy workflow"
+  description = "ECR repository URL used by the CI deploy workflow."
   value       = try(module.analytics_agent[0].ecr_repository_url, null)
 }
 
 output "analytics_agent_cluster" {
-  description = "ECS cluster name — used in aws ecs run-task commands"
+  description = "ECS cluster name used in aws ecs run-task commands."
   value       = try(module.analytics_agent[0].ecs_cluster_name, null)
 }
 
@@ -55,7 +61,7 @@ output "analytics_agent_log_group" {
 }
 
 output "analytics_agent_alb_dns" {
-  description = "Internal ALB DNS name — POST to http://{dns}/ask from within the VPC"
+  description = "ALB DNS name. POST to http://{dns}/ask during a test session."
   value       = try(module.analytics_agent[0].alb_dns_name, null)
 }
 
@@ -64,7 +70,9 @@ output "analytics_agent_service" {
   value       = try(module.analytics_agent[0].ecs_service_name, null)
 }
 
-# ── Analytics Web outputs ────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Analytics Web outputs
+# -----------------------------------------------------------------------------
 
 output "analytics_web_ecr_url" {
   description = "ECR repository URL for the optional custom HTML analytics dashboard"
@@ -86,7 +94,9 @@ output "analytics_web_url" {
   value       = try(module.analytics_web[0].url, null)
 }
 
-# ── CDC Simulator outputs ───────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# CDC Simulator outputs
+# -----------------------------------------------------------------------------
 
 output "cdc_simulator_ecr_url" {
   description = "ECR repository URL for the optional CDC simulator task image"
@@ -133,7 +143,9 @@ output "rds_identifier" {
   value       = try(module.ingestion[0].rds_identifier, null)
 }
 
-# ── Serving outputs ───────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Serving outputs
+# -----------------------------------------------------------------------------
 
 output "redshift_namespace_name" {
   description = "Redshift Serverless namespace name when serving is enabled"
@@ -155,7 +167,9 @@ output "redshift_security_group_id" {
   value       = try(module.serving[0].redshift_security_group_id, null)
 }
 
-# ── Slack MCP Gateway outputs ────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Slack MCP Gateway outputs
+# -----------------------------------------------------------------------------
 
 output "slack_mcp_gateway_ecr_url" {
   description = "ECR repository URL for the optional Slack MCP gateway"
@@ -187,7 +201,9 @@ output "slack_mcp_bot_token_secret_name" {
   value       = try(module.slack_mcp_gateway[0].slack_bot_token_secret_name, null)
 }
 
-# ── Ingestion and bastion outputs — commented out after Phase 1 CDC run ───────
+# -----------------------------------------------------------------------------
+# Ingestion and bastion outputs
+# -----------------------------------------------------------------------------
 # Uncomment when module "ingestion" and bastion are re-enabled.
 #
 # output "rds_endpoint" {

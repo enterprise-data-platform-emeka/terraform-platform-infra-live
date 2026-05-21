@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# MWAA orchestration input variables
+# -----------------------------------------------------------------------------
+# Receives Airflow runtime, networking, artifact bucket, and pipeline role inputs.
+
 variable "environment" {
   description = "Environment name: dev, staging, or prod"
   type        = string

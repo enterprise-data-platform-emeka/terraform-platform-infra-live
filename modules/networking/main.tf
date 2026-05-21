@@ -1,5 +1,17 @@
+# -----------------------------------------------------------------------------
+# Networking module
+# -----------------------------------------------------------------------------
+# Creates the Virtual Private Cloud (VPC), public/private subnets, route tables,
+# and endpoints used by the rest of the platform. Public subnets host internet
+# facing load balancers and NAT. Private subnets host databases, Glue, MWAA, and
+# Elastic Container Service (ECS) tasks.
+
 data "aws_availability_zones" "available" {}
 data "aws_region" "current" {}
+
+# -----------------------------------------------------------------------------
+# 1. VPC and subnets
+# -----------------------------------------------------------------------------
 
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
@@ -11,6 +23,7 @@ resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
 }
 
+# The first public subnet is used for NAT and can also host public entry points.
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.this.id
   cidr_block              = cidrsubnet(var.vpc_cidr, 4, 0)
@@ -18,7 +31,8 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 }
 
-# Second public subnet in AZ[1] — required for internet-facing ALBs (must span 2 AZs).
+# A second public subnet lets internet-facing Application Load Balancers span
+# two Availability Zones, which AWS requires.
 resource "aws_subnet" "public_b" {
   vpc_id                  = aws_vpc.this.id
   cidr_block              = cidrsubnet(var.vpc_cidr, 4, 3)
@@ -38,6 +52,10 @@ resource "aws_subnet" "private_b" {
   availability_zone = data.aws_availability_zones.available.names[1]
 }
 
+# -----------------------------------------------------------------------------
+# 2. Routing
+# -----------------------------------------------------------------------------
+
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.this.id
   route {
@@ -56,6 +74,8 @@ resource "aws_route_table_association" "public_b" {
   route_table_id = aws_route_table.public.id
 }
 
+# NAT gives private subnets outbound internet access for managed services that
+# need package downloads or public AWS API calls.
 # NAT Gateway allows private subnets to reach the internet (required for MWAA
 # to download PyPI packages during environment creation). Only created when
 # create_nat_gateway = true to avoid unnecessary cost when MWAA is not active.
@@ -94,6 +114,10 @@ resource "aws_route_table_association" "private_b" {
   route_table_id = aws_route_table.private.id
 }
 
+# -----------------------------------------------------------------------------
+# 3. VPC endpoints
+# -----------------------------------------------------------------------------
+
 # S3 Gateway Endpoint routes S3 traffic over AWS private network at no cost.
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.this.id
@@ -101,6 +125,10 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private.id, aws_route_table.public.id]
 }
+
+# -----------------------------------------------------------------------------
+# 4. Optional SSM endpoints for bastion sessions
+# -----------------------------------------------------------------------------
 
 # SSM Interface Endpoints are only needed when the bastion EC2 is active.
 # Uncomment this block alongside the bastion in environments/dev/main.tf.

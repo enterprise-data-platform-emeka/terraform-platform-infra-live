@@ -1,3 +1,8 @@
+# -----------------------------------------------------------------------------
+# Networking outputs
+# -----------------------------------------------------------------------------
+# Exposes VPC, subnet, routing, and endpoint identifiers to downstream modules.
+
 output "vpc_id" {
   value = aws_vpc.this.id
 }

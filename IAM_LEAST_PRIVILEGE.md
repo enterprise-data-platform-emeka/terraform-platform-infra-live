@@ -1,4 +1,4 @@
-# IAM Least Privilege in Plain English
+# IAM Least Privilege Guide
 
 ## Why this document exists
 
@@ -9,7 +9,7 @@ Give each service the smallest useful set of permissions.
 Do not give broad access just because it is easier.
 ```
 
-This document explains the intent behind the Terraform IAM policies in plain English. The Terraform files remain the source of truth, but this page should make the design easier to review before I change anything.
+This document explains the intent behind the Terraform IAM policies in clear, direct language. The Terraform files remain the source of truth, but this page should make the design easier to review before I change anything.
 
 ## The simple mental model
 
@@ -72,7 +72,7 @@ flowchart TD
 
 The Analytics Agent should be one of the most tightly scoped services because it sits close to business users.
 
-In plain English, its role should allow:
+Its role should allow:
 
 ```text
 - Read Gold table metadata from the Glue Data Catalog.
@@ -209,7 +209,7 @@ It should not allow:
 - Managing unrelated AWS services.
 ```
 
-## Plain-English review checklist
+## Review checklist
 
 Before I add or change an IAM permission, I should be able to answer these questions:
 
