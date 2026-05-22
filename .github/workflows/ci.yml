@@ -135,12 +135,14 @@ jobs:
         working-directory: environments/dev
         run: |
           set +e
-          terraform plan -no-color -input=false 2>&1 | tee /tmp/plan.txt
-          echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          terraform plan -no-color -input=false > /tmp/plan.txt 2>&1
+          PLAN_STATUS=$?
           set -e
+          echo "exitcode=${PLAN_STATUS}" >> "$GITHUB_OUTPUT"
         env:
           TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
           TF_VAR_redshift_admin_password: ${{ secrets.TF_VAR_REDSHIFT_ADMIN_PASSWORD }}
+          TF_VAR_claude_provider: ${{ vars.CLAUDE_PROVIDER || 'aws_claude_platform' }}
           TF_VAR_github_org: enterprise-data-platform-emeka
           TF_VAR_profile: ""
 

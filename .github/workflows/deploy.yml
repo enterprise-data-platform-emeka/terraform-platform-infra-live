@@ -90,12 +90,15 @@ jobs:
         # capture it. The "Fail on plan error" step below re-raises code 1.
         continue-on-error: true
         run: |
-          set -o pipefail
-          terraform plan -detailed-exitcode -no-color -input=false -out=tfplan 2>&1 | tee /tmp/plan.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set +e
+          terraform plan -detailed-exitcode -no-color -input=false -out=tfplan > /tmp/plan.txt 2>&1
+          PLAN_STATUS=$?
+          set -e
+          echo "exit_code=${PLAN_STATUS}" >> "$GITHUB_OUTPUT"
         env:
           TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
           TF_VAR_redshift_admin_password: ${{ secrets.TF_VAR_REDSHIFT_ADMIN_PASSWORD }}
+          TF_VAR_claude_provider: ${{ vars.CLAUDE_PROVIDER || 'aws_claude_platform' }}
           TF_VAR_enable_serving: ${{ inputs.enable_serving }}
           TF_VAR_profile: ""
           # TF_VAR_alert_email is optional. When not set, the SNS topic is
@@ -125,7 +128,17 @@ jobs:
 
       - name: terraform apply
         if: steps.plan.outputs.exit_code == '2'
-        run: terraform apply -auto-approve -input=false tfplan
+        run: |
+          set +e
+          terraform apply -auto-approve -input=false -no-color tfplan > /tmp/apply.txt 2>&1
+          APPLY_STATUS=$?
+          set -e
+          if [ "${APPLY_STATUS}" -ne 0 ]; then
+            echo "Terraform apply failed. Filtered diagnostics:"
+            grep -E '^\s*(Error:|Warning:|Plan:|Apply complete|No changes|#\s+\w|  #)' /tmp/apply.txt | head -120 || true
+            exit "${APPLY_STATUS}"
+          fi
+          grep -E '^\s*(Apply complete|No changes|Plan:)' /tmp/apply.txt | head -40 || true
 
       - name: Deployment summary
         if: steps.plan.outputs.exit_code == '2'

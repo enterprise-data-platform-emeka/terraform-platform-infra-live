@@ -18,8 +18,23 @@ locals {
   # The parameter itself is created manually. Secrets do not go in Terraform state.
   ssm_api_key_param = "/edp/${var.environment}/anthropic_api_key"
 
+  # Claude Platform on AWS does not need an API key. The workspace ID is not a
+  # secret, but it still belongs in SSM so each environment can point at the
+  # correct workspace without hardcoding IDs in Terraform.
+  claude_workspace_id_param = var.claude_workspace_id_ssm_parameter != "" ? var.claude_workspace_id_ssm_parameter : "/edp/${var.environment}/claude/workspace_id"
+
   # Athena workgroup name follows the processing module's naming convention.
   athena_workgroup = "${var.name_prefix}-${var.environment}-workgroup"
+}
+
+data "aws_ssm_parameter" "claude_workspace_id" {
+  count = var.claude_provider == "aws_claude_platform" ? 1 : 0
+  name  = local.claude_workspace_id_param
+}
+
+locals {
+  claude_workspace_id  = var.claude_provider == "aws_claude_platform" ? data.aws_ssm_parameter.claude_workspace_id[0].value : ""
+  claude_workspace_arn = var.claude_provider == "aws_claude_platform" ? "arn:aws:aws-external-anthropic:${local.region}:${local.account_id}:workspace/${local.claude_workspace_id}" : ""
 }
 
 # -----------------------------------------------------------------------------
@@ -285,14 +300,33 @@ data "aws_iam_policy_document" "task" {
     ]
   }
 
-  # SSM: read the Anthropic API key at startup. Scoped to exact parameter path.
-  statement {
-    sid     = "SSMApiKeyRead"
-    effect  = "Allow"
-    actions = ["ssm:GetParameter"]
-    resources = [
-      "arn:aws:ssm:${local.region}:${local.account_id}:parameter${local.ssm_api_key_param}",
-    ]
+  # Claude API key path: read the Anthropic API key at startup.
+  # This statement is omitted when the agent uses Claude Platform on AWS.
+  dynamic "statement" {
+    for_each = var.claude_provider == "anthropic_api_key" ? [1] : []
+    content {
+      sid     = "SSMApiKeyRead"
+      effect  = "Allow"
+      actions = ["ssm:GetParameter"]
+      resources = [
+        "arn:aws:ssm:${local.region}:${local.account_id}:parameter${local.ssm_api_key_param}",
+      ]
+    }
+  }
+
+  # Claude Platform on AWS path: allow Messages API calls through IAM/SigV4.
+  # The policy is scoped to the single workspace ID stored in SSM.
+  dynamic "statement" {
+    for_each = var.claude_provider == "aws_claude_platform" ? [1] : []
+    content {
+      sid    = "ClaudePlatformInference"
+      effect = "Allow"
+      actions = [
+        "aws-external-anthropic:CreateInference",
+        "aws-external-anthropic:CountTokens",
+      ]
+      resources = [local.claude_workspace_arn]
+    }
   }
 
   # ECS Exec: allows aws ecs execute-command to open an interactive shell
@@ -439,6 +473,9 @@ resource "aws_ecs_task_definition" "agent" {
         { name = "ATHENA_WORKGROUP", value = local.athena_workgroup },
         { name = "GLUE_GOLD_DATABASE", value = var.glue_gold_database },
         { name = "SSM_API_KEY_PARAM", value = local.ssm_api_key_param },
+        { name = "CLAUDE_PROVIDER", value = var.claude_provider },
+        { name = "ANTHROPIC_AWS_WORKSPACE_ID", value = local.claude_workspace_id },
+        { name = "ANTHROPIC_AWS_INFERENCE_GEO", value = var.claude_provider == "aws_claude_platform" ? var.claude_inference_geo : "" },
         { name = "SES_SENDER_EMAIL", value = var.ses_sender_email },
       ]
 

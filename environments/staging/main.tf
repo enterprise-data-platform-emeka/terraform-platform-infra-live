@@ -163,6 +163,10 @@ module "analytics_agent" {
   glue_silver_database  = module.iam_metadata.glue_catalog_database_silver
   task_cpu              = 1024
   task_memory           = 2048
+
+  claude_provider                   = var.claude_provider
+  claude_workspace_id_ssm_parameter = var.claude_workspace_id_ssm_parameter
+  claude_inference_geo              = var.claude_inference_geo
 }
 
 module "monitoring" {
