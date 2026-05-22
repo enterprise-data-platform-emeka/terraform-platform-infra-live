@@ -329,16 +329,19 @@ data "aws_iam_policy_document" "task" {
     }
   }
 
-  # sts:GetWebIdentityToken is required by the AnthropicAWS SDK to obtain an
-  # OIDC token from the ECS task credentials provider before signing requests
-  # to the Claude Platform on AWS. Without it the SDK raises PermissionDenied
-  # before it can reach the Anthropic endpoint.
+  # The AnthropicAWS SDK obtains an OIDC token from the ECS task credentials
+  # provider and uses STS to authenticate to Claude Platform on AWS.
+  # Both GetWebIdentityToken and TagGetWebIdentityToken are called by the SDK
+  # during the credential exchange before the Anthropic endpoint is reached.
   dynamic "statement" {
     for_each = var.claude_provider == "aws_claude_platform" ? [1] : []
     content {
-      sid       = "STSWebIdentityToken"
-      effect    = "Allow"
-      actions   = ["sts:GetWebIdentityToken"]
+      sid    = "STSWebIdentityToken"
+      effect = "Allow"
+      actions = [
+        "sts:GetWebIdentityToken",
+        "sts:TagGetWebIdentityToken",
+      ]
       resources = ["*"]
     }
   }
