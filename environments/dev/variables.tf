@@ -39,6 +39,24 @@ variable "enable_analytics_agent" {
   default     = true
 }
 
+variable "claude_provider" {
+  description = "Claude authentication mode for the Analytics Agent: anthropic_api_key or aws_claude_platform."
+  type        = string
+  default     = "anthropic_api_key"
+}
+
+variable "claude_workspace_id_ssm_parameter" {
+  description = "SSM Parameter Store path that contains the Claude Platform on AWS workspace ID. Leave empty to use /edp/{environment}/claude/workspace_id."
+  type        = string
+  default     = ""
+}
+
+variable "claude_inference_geo" {
+  description = "Inference geography for Claude Platform on AWS requests: us or global."
+  type        = string
+  default     = "us"
+}
+
 variable "enable_analytics_web" {
   description = "Create the optional custom HTML analytics web dashboard ECS service."
   type        = bool

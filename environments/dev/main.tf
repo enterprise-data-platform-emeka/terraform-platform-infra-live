@@ -159,6 +159,10 @@ module "analytics_agent" {
   kms_key_arn           = module.iam_metadata.kms_key_arn
   glue_gold_database    = module.iam_metadata.glue_catalog_database_gold
   glue_silver_database  = module.iam_metadata.glue_catalog_database_silver
+
+  claude_provider                   = var.claude_provider
+  claude_workspace_id_ssm_parameter = var.claude_workspace_id_ssm_parameter
+  claude_inference_geo              = var.claude_inference_geo
 }
 
 # Optional stakeholder entry point: custom HTML analytics dashboard.

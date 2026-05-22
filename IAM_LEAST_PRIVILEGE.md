@@ -125,7 +125,7 @@ The intended policy shape is:
 }
 ```
 
-This belongs in the Terraform IAM module because it is a permission granted to a platform role. The application configuration belongs with the Analytics Agent service definition because it controls how the running container reaches Claude.
+This belongs in the Analytics Agent Terraform module because that module owns the ECS task role used by the running service. The workspace ID comes from SSM Parameter Store so Terraform does not hardcode environment-specific Claude identifiers.
 
 ## Step Functions
 

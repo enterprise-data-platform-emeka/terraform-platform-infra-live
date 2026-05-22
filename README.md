@@ -300,8 +300,8 @@ These variables have no defaults and must be provided at apply time. Never put t
 **Recommended — environment variables:**
 
 ```bash
-export TF_VAR_db_password="YourSecurePassword123!"
-export TF_VAR_redshift_admin_password="AnotherSecurePassword456!"
+export TF_VAR_db_password="<rds-password>"
+export TF_VAR_redshift_admin_password="<redshift-password>"
 export TF_VAR_alert_email="you@example.com"
 make apply dev
 ```
@@ -317,14 +317,32 @@ Terraform reads any `TF_VAR_*` environment variable and maps it to the matching 
 
 From that point on, no tool (simulator, Airflow DAG, script) ever needs a password file. They fetch the value from SSM at runtime using the `dev-admin` AWS profile.
 
+Claude Platform on AWS uses the same pattern for the Analytics Agent workspace ID. The workspace ID is not a password, but storing it in SSM gives each environment one clear source of truth:
+
+```bash
+aws ssm put-parameter \
+  --name "/edp/dev/claude/workspace_id" \
+  --type "String" \
+  --value "<workspace-id>" \
+  --overwrite \
+  --profile dev-admin \
+  --region eu-central-1
+```
+
+Then I enable IAM/SigV4 Claude authentication for the agent with:
+
+```bash
+TF_VAR_claude_provider=aws_claude_platform
+```
+
 **Alternative — tfvars file (excluded from Git):**
 
 ```bash
 # Create environments/dev/secret.tfvars
 # Add this file to .gitignore
 
-db_password             = "YourSecurePassword123!"
-redshift_admin_password = "AnotherSecurePassword456!"
+db_password             = "<rds-password>"
+redshift_admin_password = "<redshift-password>"
 
 # Apply with:
 terraform apply -var-file="secret.tfvars"
@@ -633,6 +651,6 @@ Athena workgroup isolation means each environment has its own query history, res
 
 - All compute (RDS, DMS, Glue, MWAA, ECS) runs in private subnets with no public IP addresses.
 - A single customer-managed KMS (Key Management Service) key encrypts all storage: S3 buckets, RDS, Glue job bookmarks, CloudWatch logs.
-- IAM roles follow least privilege: the Glue role reads Bronze and writes Silver only; the MWAA role can trigger Glue jobs but cannot read Gold; the Analytics Agent role reads Gold and writes to the audit log path only.
+- IAM roles follow least privilege: the Glue role reads Bronze and writes Silver only; the MWAA role can trigger Glue jobs but cannot read Gold; the Analytics Agent role reads Gold, writes to the audit log path only, and can call Claude inference only for its configured workspace when Claude Platform on AWS is enabled.
 - Sensitive variables (`db_password`, `redshift_admin_password`) are never stored in Terraform state defaults. They are passed at apply time via `TF_VAR_*` environment variables.
 - All S3 buckets block public access at both the bucket and account level.
