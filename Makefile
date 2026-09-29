@@ -40,16 +40,17 @@ destroy-safe:
 		exit 1; \
 	fi
 	@ENV=$(filter $(ENVIRONMENTS),$(MAKECMDGOALS)); \
-	cd environments/$$ENV && \
-	TARGETS=$$(terraform state list 2>/dev/null | \
+	cd environments/$$ENV || exit 1; \
+	STATE=$$(terraform state list) || exit 1; \
+	TARGETS=$$(printf '%s\n' "$$STATE" | \
 		sed 's/\(module\.[^.]*\)\..*/\1/' | sort -u | \
 		grep '^module\.' | \
 		grep -v '^module\.data_lake$$' | \
 		sed 's/^/-target=/' | tr '\n' ' '); \
 	if [ -z "$$TARGETS" ]; then \
-		echo "No Terraform state found — nothing to destroy."; \
+		echo "No runtime modules in Terraform state; bucket containers are preserved."; \
 	else \
-		terraform destroy $$TARGETS -auto-approve; \
+		terraform destroy $$TARGETS -auto-approve -lock-timeout=5m; \
 	fi
 
 init:

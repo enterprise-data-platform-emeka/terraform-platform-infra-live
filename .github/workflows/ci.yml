@@ -24,6 +24,7 @@ on:
       - 'modules/**'
       - '.github/workflows/**'
       - 'Makefile'
+      - 'tests/**'
   pull_request:
     branches: [main]
     paths:
@@ -31,6 +32,7 @@ on:
       - 'modules/**'
       - '.github/workflows/**'
       - 'Makefile'
+      - 'tests/**'
 
 jobs:
   # --------------------------------------------------------------------------
@@ -70,6 +72,10 @@ jobs:
 
       - name: terraform validate
         run: terraform validate
+
+      - name: Teardown guard regression
+        working-directory: .
+        run: python3 tests/test_destroy_guard.py
 
   # --------------------------------------------------------------------------
   # Security scan: Trivy (replaces tfsec — deprecated by Aqua Security)
