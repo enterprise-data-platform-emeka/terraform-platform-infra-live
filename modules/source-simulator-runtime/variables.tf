@@ -46,13 +46,13 @@ variable "kms_key_arn" {
 variable "task_cpu" {
   description = "Fargate task CPU units."
   type        = number
-  default     = 256
+  default     = 1024
 }
 
 variable "task_memory" {
   description = "Fargate task memory in MiB."
   type        = number
-  default     = 512
+  default     = 2048
 }
 
 variable "db_name" {

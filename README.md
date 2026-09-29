@@ -654,3 +654,8 @@ Athena workgroup isolation means each environment has its own query history, res
 - IAM roles follow least privilege: the Glue role reads Bronze and writes Silver only; the MWAA role can trigger Glue jobs but cannot read Gold; the Analytics Agent role reads Gold, writes to the audit log path only, and can call Claude inference only for its configured workspace when Claude Platform on AWS is enabled.
 - Sensitive variables (`db_password`, `redshift_admin_password`) are never stored in Terraform state defaults. They are passed at apply time via `TF_VAR_*` environment variables.
 - All S3 buckets block public access at both the bucket and account level.
+
+
+## Reproducible seed sessions
+
+The customer-history seed task now uses 1 vCPU and 2 GiB. The DMS S3 endpoint captures deletes (`cdc_inserts_and_updates=false`). Session Destroy retains the data-lake bucket containers and empties their versions/objects through the session orchestrator. Terraform backend state is excluded.

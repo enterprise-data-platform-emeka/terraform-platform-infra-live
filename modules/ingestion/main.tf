@@ -144,6 +144,9 @@ resource "aws_dms_endpoint" "source" {
   username      = var.db_username
   password      = var.db_password
   ssl_mode      = "require"
+
+  # Seed history and manifest JSON must never be silently truncated.
+  extra_connection_attributes = "failTasksOnLobTruncation=true;"
 }
 
 # DMS S3 endpoint writes Parquet files to Bronze with date partitioning.
@@ -162,7 +165,7 @@ resource "aws_dms_s3_endpoint" "target_s3" {
   date_partition_sequence          = "YYYYMMDD"
   timestamp_column_name            = "_dms_timestamp"
   include_op_for_full_load         = true
-  cdc_inserts_and_updates          = true
+  cdc_inserts_and_updates          = false
 }
 
 # -----------------------------------------------------------------------------
