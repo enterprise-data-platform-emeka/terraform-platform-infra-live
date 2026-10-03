@@ -76,6 +76,8 @@ module "processing" {
   kms_key_arn           = module.iam_metadata.kms_key_arn
   athena_results_bucket = module.data_lake.athena_results_bucket
   silver_bucket_name    = module.data_lake.silver_bucket_name
+  glue_role_arn         = module.iam_metadata.glue_role_arn
+  silver_database_name  = module.iam_metadata.glue_catalog_database_silver
 }
 
 module "serving" {

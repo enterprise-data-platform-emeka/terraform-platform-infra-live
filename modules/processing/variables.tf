@@ -37,3 +37,13 @@ variable "silver_bucket_name" {
   description = "Silver S3 bucket name from the data-lake module. The Glue Crawler scans this bucket to register table schemas in the Glue Data Catalog."
   type        = string
 }
+
+variable "glue_role_arn" {
+  description = "Glue execution role ARN after its service and data-access policies are attached"
+  type        = string
+}
+
+variable "silver_database_name" {
+  description = "Silver Glue Catalog database name from the iam-metadata module"
+  type        = string
+}

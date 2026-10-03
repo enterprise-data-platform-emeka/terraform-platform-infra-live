@@ -659,3 +659,13 @@ Athena workgroup isolation means each environment has its own query history, res
 ## Reproducible seed sessions
 
 The customer-history seed task now uses 1 vCPU and 2 GiB. The DMS S3 endpoint captures deletes (`cdc_inserts_and_updates=false`). Session Destroy retains the data-lake bucket containers and empties their versions/objects through the session orchestrator. Terraform backend state is excluded.
+
+### Fresh-session crawler creation
+
+The Silver crawler consumes the Glue role and catalog database outputs directly.
+The role output waits for both the managed Glue service policy and the inline
+S3 data-access policy. This prevents Terraform from creating the crawler before
+its configured dependencies exist during a fresh session. AWS IAM propagation
+can still take time after policy attachment; local validation does not prove
+service-side readiness. A failed infrastructure apply can be retried against
+its existing state without destroying already-created resources.

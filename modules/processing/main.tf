@@ -88,8 +88,8 @@ resource "aws_glue_connection" "vpc" {
 # It runs on demand only. No schedule is set here.
 resource "aws_glue_crawler" "silver" {
   name          = "${var.name_prefix}-${var.environment}-silver-crawler"
-  role          = "${var.name_prefix}-${var.environment}-glue-role"
-  database_name = "${var.name_prefix}_${var.environment}_silver"
+  role          = var.glue_role_arn
+  database_name = var.silver_database_name
 
   s3_target {
     path = "s3://${var.silver_bucket_name}/"
