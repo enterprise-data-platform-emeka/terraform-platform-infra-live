@@ -16,6 +16,12 @@ output "kms_key_id" {
 output "glue_role_arn" {
   description = "IAM role ARN assumed by Glue jobs for ETL, dbt helper work, catalog updates, and pipeline metrics."
   value       = aws_iam_role.glue.arn
+
+  # Consumers need usable permissions, not only a created role.
+  depends_on = [
+    aws_iam_role_policy_attachment.glue_service,
+    aws_iam_role_policy.glue_data_access,
+  ]
 }
 
 output "mwaa_role_arn" {
